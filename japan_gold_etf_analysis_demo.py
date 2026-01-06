@@ -12,7 +12,7 @@ import statistics
 def analyze_japan_gold_etfs_demo():
     """デモデータを使用して日本市場の金ETFを分析"""
 
-    # 日本市場の主要な金ETF（概算データ）
+    # 日本市場の全ての金ETF（概算データ）
     japan_gold_etfs = {
         '1540.T': {
             'name': '純金上場信託（金の果実）',
@@ -57,6 +57,42 @@ def analyze_japan_gold_etfs_demo():
             'avg_volume': 35000,
             'current_price': 3280,
             'note': '米国IAUの日本上場版',
+            'hedge': 'なし'
+        },
+        '314A.T': {
+            'name': 'iシェアーズ ゴールドETF',
+            'annual_volatility': 16.4,  # %
+            'expense_ratio': 0.22,
+            'avg_volume': 25000,
+            'current_price': 4850,
+            'note': 'NISA成長投資枠対象',
+            'hedge': 'なし'
+        },
+        '424A.T': {
+            'name': 'グローバルX ゴールド ETF（為替ヘッジあり）',
+            'annual_volatility': 14.1,  # %（為替ヘッジあり）
+            'expense_ratio': 0.1775,
+            'avg_volume': 18000,
+            'current_price': 5120,
+            'note': '東証最低水準の信託報酬（2025年9月上場）',
+            'hedge': 'あり'
+        },
+        '425A.T': {
+            'name': 'グローバルX ゴールド ETF',
+            'annual_volatility': 16.4,  # %
+            'expense_ratio': 0.1775,
+            'avg_volume': 22000,
+            'current_price': 5085,
+            'note': '東証最低水準の信託報酬（2025年9月上場）',
+            'hedge': 'なし'
+        },
+        '447A.T': {
+            'name': 'ステート・ストリート・スパイダーゴールドETF',
+            'annual_volatility': 16.5,  # %
+            'expense_ratio': 0.18,
+            'avg_volume': 15000,
+            'current_price': 4920,
+            'note': '2025年11月上場',
             'hedge': 'なし'
         }
     }

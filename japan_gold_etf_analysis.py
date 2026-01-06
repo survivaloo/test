@@ -13,13 +13,17 @@ from datetime import datetime, timedelta
 def analyze_japan_gold_etfs():
     """日本市場の主要な金ETFの標準偏差を計算"""
 
-    # 日本市場の主要な金ETF
+    # 日本市場の全ての金ETF（東京証券取引所）
     japan_gold_etfs = {
         '1540.T': '純金上場信託（金の果実）',
         '1326.T': 'SPDRゴールド・シェア',
         '2840.T': 'iシェアーズ ゴールドインデックス・ファンド（為替ヘッジあり）',
         '1672.T': 'WisdomTree 金上場投資信託',
-        '1328.T': 'ishares Gold Trust'
+        '1328.T': 'ishares Gold Trust',
+        '314A.T': 'iシェアーズ ゴールドETF',
+        '424A.T': 'グローバルX ゴールド ETF（為替ヘッジあり）',
+        '425A.T': 'グローバルX ゴールド ETF',
+        '447A.T': 'ステート・ストリート・スパイダーゴールドETF'
     }
 
     # 分析期間（過去1年間）
