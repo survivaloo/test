@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>囲碁 - Go Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 2.5em;
+        }
+
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 10px;
+        }
+
+        .current-player {
+            font-size: 1.2em;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .player-indicator {
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            border: 2px solid #333;
+        }
+
+        .captures {
+            font-size: 1em;
+            display: flex;
+            gap: 20px;
+        }
+
+        .board-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+            overflow-x: auto;
+        }
+
+        #goBoard {
+            background: #DEB887;
+            border: 3px solid #8B4513;
+            cursor: crosshair;
+            border-radius: 5px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 1em;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .btn-reset {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-reset:hover {
+            background: #c0392b;
+        }
+
+        .btn-pass {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-pass:hover {
+            background: #2980b9;
+        }
+
+        .btn-undo {
+            background: #f39c12;
+            color: white;
+        }
+
+        .btn-undo:hover {
+            background: #e67e22;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 15px;
+            }
+
+            h1 {
+                font-size: 1.8em;
+            }
+
+            .game-info {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖤 囲碁 🤍</h1>
+
+        <div class="game-info">
+            <div class="current-player">
+                <span>現在の手番:</span>
+                <div class="player-indicator" id="playerIndicator"></div>
+                <span id="currentPlayerText">黒</span>
+            </div>
+            <div class="captures">
+                <div>黒の獲得: <span id="blackCaptures">0</span></div>
+                <div>白の獲得: <span id="whiteCaptures">0</span></div>
+            </div>
+        </div>
+
+        <div class="board-container">
+            <canvas id="goBoard" width="570" height="570"></canvas>
+        </div>
+
+        <div class="controls">
+            <button class="btn-pass" onclick="pass()">パス</button>
+            <button class="btn-undo" onclick="undo()">待った</button>
+            <button class="btn-reset" onclick="resetGame()">新規ゲーム</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('goBoard');
+        const ctx = canvas.getContext('2d');
+        const BOARD_SIZE = 19;
+        const CELL_SIZE = 30;
+        const STONE_RADIUS = 13;
+        const OFFSET = 30;
+
+        let board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0));
+        let currentPlayer = 1; // 1 = 黒, 2 = 白
+        let blackCaptures = 0;
+        let whiteCaptures = 0;
+        let history = [];
+        let passCount = 0;
+        let koPoint = null;
+
+        function drawBoard() {
+            // 背景
+            ctx.fillStyle = '#DEB887';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // グリッド線
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                // 縦線
+                ctx.beginPath();
+                ctx.moveTo(OFFSET + i * CELL_SIZE, OFFSET);
+                ctx.lineTo(OFFSET + i * CELL_SIZE, OFFSET + (BOARD_SIZE - 1) * CELL_SIZE);
+                ctx.stroke();
+
+                // 横線
+                ctx.beginPath();
+                ctx.moveTo(OFFSET, OFFSET + i * CELL_SIZE);
+                ctx.lineTo(OFFSET + (BOARD_SIZE - 1) * CELL_SIZE, OFFSET + i * CELL_SIZE);
+                ctx.stroke();
+            }
+
+            // 星(天元と星目)
+            const starPoints = [3, 9, 15];
+            ctx.fillStyle = '#000';
+            starPoints.forEach(i => {
+                starPoints.forEach(j => {
+                    ctx.beginPath();
+                    ctx.arc(OFFSET + i * CELL_SIZE, OFFSET + j * CELL_SIZE, 3, 0, 2 * Math.PI);
+                    ctx.fill();
+                });
+            });
+
+            // 石を描画
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                for (let j = 0; j < BOARD_SIZE; j++) {
+                    if (board[i][j] === 1) {
+                        drawStone(i, j, 'black');
+                    } else if (board[i][j] === 2) {
+                        drawStone(i, j, 'white');
+                    }
+                }
+            }
+        }
+
+        function drawStone(x, y, color) {
+            const px = OFFSET + x * CELL_SIZE;
+            const py = OFFSET + y * CELL_SIZE;
+
+            ctx.beginPath();
+            ctx.arc(px, py, STONE_RADIUS, 0, 2 * Math.PI);
+
+            if (color === 'black') {
+                const gradient = ctx.createRadialGradient(px - 3, py - 3, 2, px, py, STONE_RADIUS);
+                gradient.addColorStop(0, '#666');
+                gradient.addColorStop(1, '#000');
+                ctx.fillStyle = gradient;
+            } else {
+                const gradient = ctx.createRadialGradient(px - 3, py - 3, 2, px, py, STONE_RADIUS);
+                gradient.addColorStop(0, '#fff');
+                gradient.addColorStop(1, '#ddd');
+                ctx.fillStyle = gradient;
+            }
+
+            ctx.fill();
+            ctx.strokeStyle = color === 'black' ? '#000' : '#999';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        function getClickPosition(event) {
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            const boardX = Math.round((x - OFFSET) / CELL_SIZE);
+            const boardY = Math.round((y - OFFSET) / CELL_SIZE);
+
+            if (boardX >= 0 && boardX < BOARD_SIZE && boardY >= 0 && boardY < BOARD_SIZE) {
+                return { x: boardX, y: boardY };
+            }
+            return null;
+        }
+
+        function isValidMove(x, y) {
+            if (board[x][y] !== 0) return false;
+
+            // コウのチェック
+            if (koPoint && koPoint.x === x && koPoint.y === y) {
+                return false;
+            }
+
+            // 仮配置
+            const tempBoard = board.map(row => [...row]);
+            tempBoard[x][y] = currentPlayer;
+
+            // 相手の石を取れるかチェック
+            const opponent = currentPlayer === 1 ? 2 : 1;
+            let capturedStones = [];
+
+            [[0,1], [1,0], [0,-1], [-1,0]].forEach(([dx, dy]) => {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE) {
+                    if (tempBoard[nx][ny] === opponent) {
+                        const group = getGroup(nx, ny, tempBoard);
+                        if (!hasLiberties(group, tempBoard)) {
+                            capturedStones.push(...group);
+                        }
+                    }
+                }
+            });
+
+            // 自殺手のチェック（相手の石を取れない場合）
+            if (capturedStones.length === 0) {
+                const myGroup = getGroup(x, y, tempBoard);
+                if (!hasLiberties(myGroup, tempBoard)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        function getGroup(x, y, boardState) {
+            const color = boardState[x][y];
+            const group = [];
+            const visited = new Set();
+            const stack = [[x, y]];
+
+            while (stack.length > 0) {
+                const [cx, cy] = stack.pop();
+                const key = `${cx},${cy}`;
+
+                if (visited.has(key)) continue;
+                visited.add(key);
+
+                if (boardState[cx][cy] === color) {
+                    group.push([cx, cy]);
+
+                    [[0,1], [1,0], [0,-1], [-1,0]].forEach(([dx, dy]) => {
+                        const nx = cx + dx;
+                        const ny = cy + dy;
+                        if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE) {
+                            stack.push([nx, ny]);
+                        }
+                    });
+                }
+            }
+
+            return group;
+        }
+
+        function hasLiberties(group, boardState) {
+            for (let [x, y] of group) {
+                const neighbors = [[0,1], [1,0], [0,-1], [-1,0]];
+                for (let [dx, dy] of neighbors) {
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE) {
+                        if (boardState[nx][ny] === 0) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        function captureStones(x, y) {
+            const opponent = currentPlayer === 1 ? 2 : 1;
+            let totalCaptured = [];
+            let singleCapture = null;
+
+            [[0,1], [1,0], [0,-1], [-1,0]].forEach(([dx, dy]) => {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE) {
+                    if (board[nx][ny] === opponent) {
+                        const group = getGroup(nx, ny, board);
+                        if (!hasLiberties(group, board)) {
+                            group.forEach(([gx, gy]) => {
+                                board[gx][gy] = 0;
+                                totalCaptured.push([gx, gy]);
+                            });
+
+                            if (currentPlayer === 1) {
+                                blackCaptures += group.length;
+                            } else {
+                                whiteCaptures += group.length;
+                            }
+                        }
+                    }
+                }
+            });
+
+            // コウの処理（1個の石を取った場合）
+            if (totalCaptured.length === 1) {
+                singleCapture = { x: totalCaptured[0][0], y: totalCaptured[0][1] };
+            }
+
+            koPoint = singleCapture;
+        }
+
+        function placeStone(x, y) {
+            if (!isValidMove(x, y)) {
+                return false;
+            }
+
+            // 履歴を保存
+            history.push({
+                board: board.map(row => [...row]),
+                player: currentPlayer,
+                blackCaptures: blackCaptures,
+                whiteCaptures: whiteCaptures,
+                koPoint: koPoint
+            });
+
+            board[x][y] = currentPlayer;
+            captureStones(x, y);
+
+            currentPlayer = currentPlayer === 1 ? 2 : 1;
+            passCount = 0;
+            updateDisplay();
+            return true;
+        }
+
+        function pass() {
+            passCount++;
+            if (passCount >= 2) {
+                alert('両者がパスしました。ゲーム終了です。');
+                return;
+            }
+
+            currentPlayer = currentPlayer === 1 ? 2 : 1;
+            updateDisplay();
+            alert(`${currentPlayer === 1 ? '白' : '黒'}がパスしました。`);
+        }
+
+        function undo() {
+            if (history.length === 0) {
+                alert('待ったできません。');
+                return;
+            }
+
+            const lastState = history.pop();
+            board = lastState.board;
+            currentPlayer = lastState.player;
+            blackCaptures = lastState.blackCaptures;
+            whiteCaptures = lastState.whiteCaptures;
+            koPoint = lastState.koPoint;
+            passCount = 0;
+
+            updateDisplay();
+        }
+
+        function resetGame() {
+            if (confirm('新しいゲームを開始しますか？')) {
+                board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0));
+                currentPlayer = 1;
+                blackCaptures = 0;
+                whiteCaptures = 0;
+                history = [];
+                passCount = 0;
+                koPoint = null;
+                updateDisplay();
+            }
+        }
+
+        function updateDisplay() {
+            drawBoard();
+
+            const indicator = document.getElementById('playerIndicator');
+            const playerText = document.getElementById('currentPlayerText');
+
+            if (currentPlayer === 1) {
+                indicator.style.background = 'black';
+                playerText.textContent = '黒';
+            } else {
+                indicator.style.background = 'white';
+                playerText.textContent = '白';
+            }
+
+            document.getElementById('blackCaptures').textContent = blackCaptures;
+            document.getElementById('whiteCaptures').textContent = whiteCaptures;
+        }
+
+        canvas.addEventListener('click', (event) => {
+            const pos = getClickPosition(event);
+            if (pos) {
+                placeStone(pos.x, pos.y);
+            }
+        });
+
+        // 初期描画
+        drawBoard();
+        updateDisplay();
+    </script>
+</body>
+</html>
