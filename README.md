@@ -1,6 +1,42 @@
-# 金ETF標準偏差分析
+# プロジェクト一覧
 
-このプロジェクトは、米国市場と日本市場の主要な金ETFの標準偏差（ボラティリティ）を計算し、最もリスクが低いETFを特定するためのツールです。
+このリポジトリには以下のプロジェクトが含まれています：
+
+## 🖤 囲碁 Web アプリケーション 🤍
+
+本格的な19×19の囲碁盤で遊べるWebアプリケーションです。
+
+### 🎮 オンラインでプレイ
+
+**すぐにプレイ（HTMLプレビュー）:**
+```
+https://htmlpreview.github.io/?https://github.com/survivaloo/test/blob/claude/deploy-go-game-tunnel-fuVPB/go-game/index.html
+```
+
+**または、GitHub Pagesで公開（推奨）:**
+
+1. [Settings → Pages](https://github.com/survivaloo/test/settings/pages)にアクセス
+2. **Source**: 「Deploy from a branch」を選択
+3. **Branch**: 「claude/deploy-go-game-tunnel-fuVPB」→「/go-game」を選択
+4. **Save**をクリック
+
+設定後、https://survivaloo.github.io/test/ でアクセス可能になります。
+
+### 🎯 機能
+
+- ✨ 19×19の本格的な囲碁盤
+- ⚫⚪ 黒と白の石を交互に配置
+- 🎯 石の取り上げ（囲まれた石の自動除去）
+- 🔄 コウのルール完全実装
+- ⏭️ パス機能
+- ↩️ 待った（undo）機能
+- 🆕 新規ゲーム開始
+
+---
+
+## 📊 金ETF標準偏差分析
+
+米国市場と日本市場の主要な金ETFの標準偏差（ボラティリティ）を計算し、最もリスクが低いETFを特定するためのツールです。
 
 ## 分析対象ETF
 
