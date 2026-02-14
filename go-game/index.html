@@ -811,17 +811,28 @@
                 move = findYoseMoves();
             }
 
-            // 3. 重要な局面ではミニマックス探索（深さ2）
+            // 3. 重要な局面ではミニマックス探索（深さ3-4）
             if (!move && shouldUseDeepSearch()) {
-                move = minimaxSearch(2);
+                const depth = history.length < 30 ? 3 : 4; // 序盤は深さ3、中盤以降は深さ4
+                move = minimaxSearch(depth);
             }
 
             // 3.5. 複雑な局面ではモンテカルロシミュレーション
             if (!move && shouldUseMonteCarloSearch()) {
-                move = monteCarloSearch(50); // 50回シミュレーション
+                move = monteCarloSearch(150); // 150回シミュレーション（強化）
             }
 
-            // 4. 通常の最善手探索
+            // 4. 形勢判断に基づいた戦略
+            if (!move) {
+                const advantage = evaluateAdvantage();
+
+                // 劣勢の時はより積極的に（深い読み）
+                if (advantage < -10 && history.length >= 15 && history.length <= 100) {
+                    move = minimaxSearch(4); // 深さ4で読む
+                }
+            }
+
+            // 5. 通常の最善手探索
             if (!move) {
                 move = findBestMove();
             }
@@ -836,13 +847,60 @@
             isAiThinking = false;
         }
 
-        // 深い探索が必要か判断
+        // 形勢判断（優勢度を計算）
+        function evaluateAdvantage() {
+            let advantage = 0;
+
+            // 1. 取った石の数
+            if (aiPlayer === 1) {
+                advantage += (blackCaptures - whiteCaptures) * 5;
+            } else {
+                advantage += (whiteCaptures - blackCaptures) * 5;
+            }
+
+            // 2. 盤上の石の強さ（呼吸点の合計）
+            for (let x = 0; x < BOARD_SIZE; x++) {
+                for (let y = 0; y < BOARD_SIZE; y++) {
+                    if (board[x][y] !== 0) {
+                        const group = getGroup(x, y, board);
+                        const liberties = countLiberties(group, board);
+
+                        if (board[x][y] === aiPlayer) {
+                            advantage += liberties * 0.5;
+                        } else {
+                            advantage -= liberties * 0.5;
+                        }
+                    }
+                }
+            }
+
+            // 3. 影響力の合計
+            let aiInfluence = 0;
+            let opponentInfluence = 0;
+            const opponent = aiPlayer === 1 ? 2 : 1;
+
+            for (let x = 0; x < BOARD_SIZE; x++) {
+                for (let y = 0; y < BOARD_SIZE; y++) {
+                    if (board[x][y] === aiPlayer) {
+                        aiInfluence += calculateInfluence(x, y);
+                    } else if (board[x][y] === opponent) {
+                        opponentInfluence += calculateInfluence(x, y);
+                    }
+                }
+            }
+
+            advantage += (aiInfluence - opponentInfluence) * 0.3;
+
+            return advantage;
+        }
+
+        // 深い探索が必要か判断（強化版）
         function shouldUseDeepSearch() {
             const moveCount = history.length;
 
-            // 序盤・中盤の重要な局面
-            if (moveCount >= 10 && moveCount <= 80) {
-                // アタリがある場合
+            // 序盤・中盤は常に深い探索を使う（10-100手目）
+            if (moveCount >= 10 && moveCount <= 100) {
+                // 1. アタリがある場合（最優先）
                 for (let x = 0; x < BOARD_SIZE; x++) {
                     for (let y = 0; y < BOARD_SIZE; y++) {
                         if (board[x][y] === aiPlayer) {
@@ -852,6 +910,24 @@
                             }
                         }
                     }
+                }
+
+                // 2. 相手の石をアタリにできる場合
+                const opponent = aiPlayer === 1 ? 2 : 1;
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    for (let y = 0; y < BOARD_SIZE; y++) {
+                        if (board[x][y] === opponent) {
+                            const group = getGroup(x, y, board);
+                            if (countLiberties(group, board) <= 2) {
+                                return true; // 攻撃のチャンス
+                            }
+                        }
+                    }
+                }
+
+                // 3. 20手に1回は深く読む（ランダムサンプリング）
+                if (moveCount % 20 === 0) {
+                    return true;
                 }
             }
 
@@ -1073,12 +1149,12 @@
             return false;
         }
 
-        // モンテカルロ探索が必要か判断
+        // モンテカルロ探索が必要か判断（強化版）
         function shouldUseMonteCarloSearch() {
             const moveCount = history.length;
 
-            // 中盤の複雑な局面（30-100手目）
-            if (moveCount >= 30 && moveCount <= 100) {
+            // 中盤の複雑な局面（20-120手目）- 範囲拡大
+            if (moveCount >= 20 && moveCount <= 120) {
                 // 乱戦状態か確認
                 let stoneCount = 0;
                 for (let x = 0; x < BOARD_SIZE; x++) {
@@ -1087,9 +1163,9 @@
                     }
                 }
 
-                // 盤面の30-70%が埋まっている場合
+                // 盤面の25-75%が埋まっている場合（範囲拡大）
                 const fillRate = stoneCount / (BOARD_SIZE * BOARD_SIZE);
-                return fillRate >= 0.3 && fillRate <= 0.7;
+                return fillRate >= 0.25 && fillRate <= 0.75;
             }
 
             return false;
@@ -1203,22 +1279,22 @@
                     if (board[x][y] === 0 && isValidMove(x, y)) {
                         let priority = 0;
 
-                        // 1. 相手の石を取れる手（最優先）
+                        // 1. 相手の石を取れる手（最優先）- 重み強化
                         const captureCount = countPotentialCaptures(x, y);
                         if (captureCount > 0) {
-                            priority += 150 + captureCount * 20;
+                            priority += 200 + captureCount * 30; // 150→200、20→30に増加
                         }
 
-                        // 2. アタリ（相手を1呼吸点にする手）
+                        // 2. アタリ（相手を1呼吸点にする手）- 重み強化
                         const atariCount = countAtariMoves(x, y, opponent);
                         if (atariCount > 0) {
-                            priority += 120 + atariCount * 15;
+                            priority += 160 + atariCount * 20; // 120→160、15→20に増加
                         }
 
-                        // 3. 自分の石を守る手
+                        // 3. 自分の石を守る手 - 重み強化
                         const defenseValue = evaluateDefenseMove(x, y);
                         if (defenseValue > 0) {
-                            priority += 140 + defenseValue;
+                            priority += 180 + defenseValue; // 140→180に増加
                         }
 
                         // 4. 自分の石を連絡する手
@@ -1296,7 +1372,7 @@
             return atariCount;
         }
 
-        // 防御の価値を評価
+        // 防御の価値を評価（強化版）
         function evaluateDefenseMove(x, y) {
             let value = 0;
 
@@ -1308,13 +1384,17 @@
                         const group = getGroup(nx, ny, board);
                         const liberties = countLiberties(group, board);
 
-                        // 1呼吸点の石を守る（アタリ）
+                        // 1呼吸点の石を守る（アタリ）- 重み大幅強化
                         if (liberties === 1) {
-                            value += group.length * 30;
+                            value += group.length * 50; // 30→50に増加
                         }
-                        // 2呼吸点の石も少し価値がある
+                        // 2呼吸点の石も重要
                         else if (liberties === 2) {
-                            value += group.length * 10;
+                            value += group.length * 20; // 10→20に増加
+                        }
+                        // 3呼吸点も少し考慮
+                        else if (liberties === 3) {
+                            value += group.length * 5;
                         }
                     }
                 }
