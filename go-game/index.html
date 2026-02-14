@@ -258,14 +258,53 @@
                 { condition: [[0, 0, 0]], response: [[3, 3, 0]], priority: 70 },
             ],
 
-            // 序盤の良い手（実座標）
+            // 序盤の良い手（実座標）- 優先度順
             openingMoves: [
-                // 四隅の星
-                [3, 3], [15, 3], [3, 15], [15, 15],
-                // 小目
-                [3, 4], [4, 3], [15, 4], [14, 3], [3, 14], [4, 15], [15, 14], [14, 15],
+                // 四隅の星（最優先）
+                { pos: [3, 3], priority: 100 },
+                { pos: [15, 3], priority: 100 },
+                { pos: [3, 15], priority: 100 },
+                { pos: [15, 15], priority: 100 },
+                // 小目（高優先）
+                { pos: [3, 4], priority: 95 },
+                { pos: [4, 3], priority: 95 },
+                { pos: [15, 4], priority: 95 },
+                { pos: [14, 3], priority: 95 },
+                { pos: [3, 14], priority: 95 },
+                { pos: [4, 15], priority: 95 },
+                { pos: [15, 14], priority: 95 },
+                { pos: [14, 15], priority: 95 },
                 // 高目
-                [3, 5], [5, 3], [15, 5], [13, 3], [3, 13], [5, 15], [15, 13], [13, 15],
+                { pos: [3, 5], priority: 90 },
+                { pos: [5, 3], priority: 90 },
+                { pos: [15, 5], priority: 90 },
+                { pos: [13, 3], priority: 90 },
+                { pos: [3, 13], priority: 90 },
+                { pos: [5, 15], priority: 90 },
+                { pos: [15, 13], priority: 90 },
+                { pos: [13, 15], priority: 90 },
+                // 目外し
+                { pos: [3, 6], priority: 85 },
+                { pos: [6, 3], priority: 85 },
+                { pos: [15, 6], priority: 85 },
+                { pos: [12, 3], priority: 85 },
+                { pos: [3, 12], priority: 85 },
+                { pos: [6, 15], priority: 85 },
+                { pos: [15, 12], priority: 85 },
+                { pos: [12, 15], priority: 85 },
+            ],
+
+            // シマリ（隅の石を2つで固める定石）
+            shimariPatterns: [
+                // 小目のシマリ
+                { corner: [3, 3], shimari: [5, 3] },
+                { corner: [3, 3], shimari: [3, 5] },
+                { corner: [15, 3], shimari: [13, 3] },
+                { corner: [15, 3], shimari: [15, 5] },
+                { corner: [3, 15], shimari: [5, 15] },
+                { corner: [3, 15], shimari: [3, 13] },
+                { corner: [15, 15], shimari: [13, 15] },
+                { corner: [15, 15], shimari: [15, 13] },
             ],
 
             // カカリの位置（小目に対する掛かり）
@@ -290,10 +329,23 @@
 
             // 1. 隅が空いていれば隅を取る（最初の4-6手）
             if (moveCount < 6) {
-                for (let pos of josekiDatabase.openingMoves) {
-                    const [x, y] = pos;
+                for (let move of josekiDatabase.openingMoves) {
+                    const [x, y] = move.pos;
                     if (board[x][y] === 0 && isValidMove(x, y)) {
-                        return { x, y, priority: 200, joseki: true };
+                        return { x, y, priority: 200 + move.priority, joseki: true };
+                    }
+                }
+            }
+
+            // 1.5. シマリ（隅を固める）
+            if (moveCount >= 2 && moveCount < 10) {
+                for (let shimari of josekiDatabase.shimariPatterns) {
+                    const [cx, cy] = shimari.corner;
+                    const [sx, sy] = shimari.shimari;
+
+                    // 自分の石が隅にあり、シマリの位置が空いていれば打つ
+                    if (board[cx][cy] === aiPlayer && board[sx][sy] === 0 && isValidMove(sx, sy)) {
+                        return { x: sx, y: sy, priority: 190, joseki: true };
                     }
                 }
             }
@@ -429,6 +481,83 @@
             }
 
             return null;
+        }
+
+        // ヨセ（終盤）の手を探す
+        function findYoseMoves() {
+            const totalStones = history.length;
+            const boardFilled = totalStones / (BOARD_SIZE * BOARD_SIZE);
+
+            // 盤面の50%以上が埋まったらヨセモード
+            if (boardFilled < 0.5) return null;
+
+            const yoseMoves = [];
+
+            // 1. 相手の地を減らす手（ヨミ）
+            for (let x = 0; x < BOARD_SIZE; x++) {
+                for (let y = 0; y < BOARD_SIZE; y++) {
+                    if (board[x][y] === 0 && isValidMove(x, y)) {
+                        const yoseValue = evaluateYoseMove(x, y);
+                        if (yoseValue > 0) {
+                            yoseMoves.push({ x, y, priority: 100 + yoseValue });
+                        }
+                    }
+                }
+            }
+
+            if (yoseMoves.length > 0) {
+                yoseMoves.sort((a, b) => b.priority - a.priority);
+                return yoseMoves[0];
+            }
+
+            return null;
+        }
+
+        // ヨセの価値を評価
+        function evaluateYoseMove(x, y) {
+            let value = 0;
+            const opponent = aiPlayer === 1 ? 2 : 1;
+
+            // 周囲の石の状況を確認
+            let friendlyAdjacent = 0;
+            let enemyAdjacent = 0;
+            let emptyAdjacent = 0;
+
+            [[0,1], [1,0], [0,-1], [-1,0]].forEach(([dx, dy]) => {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE) {
+                    if (board[nx][ny] === aiPlayer) {
+                        friendlyAdjacent++;
+                    } else if (board[nx][ny] === opponent) {
+                        enemyAdjacent++;
+                    } else {
+                        emptyAdjacent++;
+                    }
+                }
+            });
+
+            // 相手の地に入る手（ヨミ）
+            if (enemyAdjacent >= 2 && emptyAdjacent <= 2) {
+                value += 30 + enemyAdjacent * 5;
+            }
+
+            // 自分の地を守る手
+            if (friendlyAdjacent >= 2 && enemyAdjacent >= 1) {
+                value += 25 + friendlyAdjacent * 4;
+            }
+
+            // ダメ（目を詰める手）
+            if (friendlyAdjacent >= 3 && emptyAdjacent === 1) {
+                value += 20;
+            }
+
+            // 辺の１目（価値が高い）
+            if ((x === 0 || x === BOARD_SIZE - 1 || y === 0 || y === BOARD_SIZE - 1) && emptyAdjacent <= 2) {
+                value += 15;
+            }
+
+            return value;
         }
 
         function drawBoard() {
@@ -670,10 +799,29 @@
             if (isAiThinking) return;
             isAiThinking = true;
 
-            // まず定石を確認（序盤）
-            let move = findJosekiMove();
+            let move = null;
 
-            // 定石がなければ通常の最善手を探す
+            // 1. 定石チェック（序盤）
+            if (history.length < 15) {
+                move = findJosekiMove();
+            }
+
+            // 2. ヨセチェック（終盤）
+            if (!move && history.length > (BOARD_SIZE * BOARD_SIZE) * 0.5) {
+                move = findYoseMoves();
+            }
+
+            // 3. 重要な局面ではミニマックス探索（深さ2）
+            if (!move && shouldUseDeepSearch()) {
+                move = minimaxSearch(2);
+            }
+
+            // 3.5. 複雑な局面ではモンテカルロシミュレーション
+            if (!move && shouldUseMonteCarloSearch()) {
+                move = monteCarloSearch(50); // 50回シミュレーション
+            }
+
+            // 4. 通常の最善手探索
             if (!move) {
                 move = findBestMove();
             }
@@ -686,6 +834,362 @@
             }
 
             isAiThinking = false;
+        }
+
+        // 深い探索が必要か判断
+        function shouldUseDeepSearch() {
+            const moveCount = history.length;
+
+            // 序盤・中盤の重要な局面
+            if (moveCount >= 10 && moveCount <= 80) {
+                // アタリがある場合
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    for (let y = 0; y < BOARD_SIZE; y++) {
+                        if (board[x][y] === aiPlayer) {
+                            const group = getGroup(x, y, board);
+                            if (countLiberties(group, board) <= 2) {
+                                return true; // 危険な状況
+                            }
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        // ミニマックス探索（深さ制限あり）
+        function minimaxSearch(depth) {
+            const opponent = aiPlayer === 1 ? 2 : 1;
+            let bestMove = null;
+            let bestScore = -Infinity;
+
+            // 候補手を絞る（全探索は重いため）
+            const candidates = getCandidateMoves(10);
+
+            for (let candidate of candidates) {
+                const {x, y} = candidate;
+
+                // 仮に打ってみる
+                const tempBoard = board.map(row => [...row]);
+                const tempCaptures = { black: blackCaptures, white: whiteCaptures };
+
+                if (simulateMove(x, y, aiPlayer, tempBoard, tempCaptures)) {
+                    // 相手のターンを評価
+                    const score = -negamax(tempBoard, tempCaptures, depth - 1, opponent, -Infinity, Infinity);
+
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMove = { x, y, priority: 200 + score };
+                    }
+                }
+            }
+
+            return bestMove;
+        }
+
+        // Negamax（ミニマックスの変形）
+        function negamax(boardState, captures, depth, player, alpha, beta) {
+            if (depth === 0) {
+                return evaluateBoardState(boardState, captures, player);
+            }
+
+            const candidates = getCandidateMovesForBoard(boardState, 8);
+            let maxScore = -Infinity;
+
+            for (let candidate of candidates) {
+                const {x, y} = candidate;
+                const tempBoard = boardState.map(row => [...row]);
+                const tempCaptures = { ...captures };
+
+                if (simulateMove(x, y, player, tempBoard, tempCaptures)) {
+                    const opponent = player === 1 ? 2 : 1;
+                    const score = -negamax(tempBoard, tempCaptures, depth - 1, opponent, -beta, -alpha);
+
+                    maxScore = Math.max(maxScore, score);
+                    alpha = Math.max(alpha, score);
+
+                    if (alpha >= beta) {
+                        break; // α-βカット
+                    }
+                }
+            }
+
+            return maxScore === -Infinity ? 0 : maxScore;
+        }
+
+        // 盤面の評価（スコア計算）
+        function evaluateBoardState(boardState, captures, player) {
+            let score = 0;
+
+            // 取った石の数
+            if (player === 1) {
+                score += (captures.black - captures.white) * 10;
+            } else {
+                score += (captures.white - captures.black) * 10;
+            }
+
+            // 石の生存度（呼吸点の数）
+            for (let x = 0; x < BOARD_SIZE; x++) {
+                for (let y = 0; y < BOARD_SIZE; y++) {
+                    if (boardState[x][y] === player) {
+                        const group = getGroupForBoard(x, y, boardState);
+                        const liberties = countLiberties(group, boardState);
+                        score += liberties * 2;
+                    } else if (boardState[x][y] !== 0) {
+                        const group = getGroupForBoard(x, y, boardState);
+                        const liberties = countLiberties(group, boardState);
+                        score -= liberties * 2;
+                    }
+                }
+            }
+
+            return score;
+        }
+
+        // 候補手を取得（現在の盤面用）
+        function getCandidateMoves(limit) {
+            const moves = [];
+
+            for (let x = 0; x < BOARD_SIZE; x++) {
+                for (let y = 0; y < BOARD_SIZE; y++) {
+                    if (board[x][y] === 0 && isValidMove(x, y)) {
+                        let priority = 0;
+
+                        // 取れる石
+                        priority += countPotentialCaptures(x, y) * 20;
+
+                        // 周囲の石の数
+                        let adj = 0;
+                        [[0,1], [1,0], [0,-1], [-1,0]].forEach(([dx, dy]) => {
+                            const nx = x + dx, ny = y + dy;
+                            if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE && board[nx][ny] !== 0) {
+                                adj++;
+                            }
+                        });
+                        priority += adj * 5;
+
+                        if (priority > 0 || Math.random() > 0.7) {
+                            moves.push({ x, y, priority });
+                        }
+                    }
+                }
+            }
+
+            moves.sort((a, b) => b.priority - a.priority);
+            return moves.slice(0, limit);
+        }
+
+        // 候補手を取得（任意の盤面用）
+        function getCandidateMovesForBoard(boardState, limit) {
+            const moves = [];
+
+            for (let x = 0; x < BOARD_SIZE; x++) {
+                for (let y = 0; y < BOARD_SIZE; y++) {
+                    if (boardState[x][y] === 0) {
+                        let adj = 0;
+                        [[0,1], [1,0], [0,-1], [-1,0]].forEach(([dx, dy]) => {
+                            const nx = x + dx, ny = y + dy;
+                            if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE && boardState[nx][ny] !== 0) {
+                                adj++;
+                            }
+                        });
+
+                        if (adj > 0) {
+                            moves.push({ x, y, priority: adj });
+                        }
+                    }
+                }
+            }
+
+            moves.sort((a, b) => b.priority - a.priority);
+            return moves.slice(0, limit);
+        }
+
+        // 手をシミュレート
+        function simulateMove(x, y, player, boardState, captures) {
+            if (boardState[x][y] !== 0) return false;
+
+            boardState[x][y] = player;
+
+            // 取れる石を除去
+            const opponent = player === 1 ? 2 : 1;
+            [[0,1], [1,0], [0,-1], [-1,0]].forEach(([dx, dy]) => {
+                const nx = x + dx, ny = y + dy;
+                if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE && boardState[nx][ny] === opponent) {
+                    const group = getGroupForBoard(nx, ny, boardState);
+                    if (!hasLibertiesForBoard(group, boardState)) {
+                        group.forEach(([gx, gy]) => {
+                            boardState[gx][gy] = 0;
+                            if (player === 1) captures.black++;
+                            else captures.white++;
+                        });
+                    }
+                }
+            });
+
+            return true;
+        }
+
+        // グループ取得（任意の盤面用）
+        function getGroupForBoard(x, y, boardState) {
+            const color = boardState[x][y];
+            const group = [];
+            const visited = new Set();
+            const stack = [[x, y]];
+
+            while (stack.length > 0) {
+                const [cx, cy] = stack.pop();
+                const key = `${cx},${cy}`;
+
+                if (visited.has(key)) continue;
+                visited.add(key);
+
+                if (boardState[cx][cy] === color) {
+                    group.push([cx, cy]);
+
+                    [[0,1], [1,0], [0,-1], [-1,0]].forEach(([dx, dy]) => {
+                        const nx = cx + dx, ny = cy + dy;
+                        if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE) {
+                            stack.push([nx, ny]);
+                        }
+                    });
+                }
+            }
+
+            return group;
+        }
+
+        // 呼吸点チェック（任意の盤面用）
+        function hasLibertiesForBoard(group, boardState) {
+            for (let [x, y] of group) {
+                [[0,1], [1,0], [0,-1], [-1,0]].forEach(([dx, dy]) => {
+                    const nx = x + dx, ny = y + dy;
+                    if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE && boardState[nx][ny] === 0) {
+                        return true;
+                    }
+                });
+            }
+            return false;
+        }
+
+        // モンテカルロ探索が必要か判断
+        function shouldUseMonteCarloSearch() {
+            const moveCount = history.length;
+
+            // 中盤の複雑な局面（30-100手目）
+            if (moveCount >= 30 && moveCount <= 100) {
+                // 乱戦状態か確認
+                let stoneCount = 0;
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    for (let y = 0; y < BOARD_SIZE; y++) {
+                        if (board[x][y] !== 0) stoneCount++;
+                    }
+                }
+
+                // 盤面の30-70%が埋まっている場合
+                const fillRate = stoneCount / (BOARD_SIZE * BOARD_SIZE);
+                return fillRate >= 0.3 && fillRate <= 0.7;
+            }
+
+            return false;
+        }
+
+        // モンテカルロ探索（簡易版）
+        function monteCarloSearch(simulations) {
+            const candidates = getCandidateMoves(8);
+            const results = new Map();
+
+            // 各候補手についてシミュレーション
+            for (let candidate of candidates) {
+                const {x, y} = candidate;
+                let wins = 0;
+
+                // N回ランダムプレイアウト
+                for (let i = 0; i < simulations; i++) {
+                    const tempBoard = board.map(row => [...row]);
+                    const tempCaptures = { black: blackCaptures, white: whiteCaptures };
+
+                    // この手を打つ
+                    if (simulateMove(x, y, aiPlayer, tempBoard, tempCaptures)) {
+                        // ランダムプレイアウト
+                        const result = randomPlayout(tempBoard, tempCaptures, aiPlayer);
+                        if (result > 0) wins++;
+                    }
+                }
+
+                results.set(`${x},${y}`, wins);
+            }
+
+            // 最も勝率の高い手を選ぶ
+            let bestMove = null;
+            let bestWins = -1;
+
+            for (let candidate of candidates) {
+                const {x, y} = candidate;
+                const wins = results.get(`${x},${y}`) || 0;
+
+                if (wins > bestWins) {
+                    bestWins = wins;
+                    bestMove = { x, y, priority: 180 + wins };
+                }
+            }
+
+            return bestMove;
+        }
+
+        // ランダムプレイアウト（終局まで）
+        function randomPlayout(boardState, captures, startPlayer) {
+            let currentPlayer = startPlayer === 1 ? 2 : 1; // 相手のターンから
+            let passCount = 0;
+            let moveCount = 0;
+            const maxMoves = 100; // 無限ループ防止
+
+            while (passCount < 2 && moveCount < maxMoves) {
+                const validMoves = [];
+
+                // 有効な手を収集
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    for (let y = 0; y < BOARD_SIZE; y++) {
+                        if (boardState[x][y] === 0) {
+                            // 簡易的な有効性チェック
+                            let hasAdjacentStone = false;
+                            [[0,1], [1,0], [0,-1], [-1,0]].forEach(([dx, dy]) => {
+                                const nx = x + dx, ny = y + dy;
+                                if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE && boardState[nx][ny] !== 0) {
+                                    hasAdjacentStone = true;
+                                }
+                            });
+
+                            if (hasAdjacentStone || Math.random() > 0.9) {
+                                validMoves.push({ x, y });
+                            }
+                        }
+                    }
+                }
+
+                if (validMoves.length === 0) {
+                    passCount++;
+                } else {
+                    // ランダムに手を選ぶ
+                    const move = validMoves[Math.floor(Math.random() * validMoves.length)];
+                    if (simulateMove(move.x, move.y, currentPlayer, boardState, captures)) {
+                        passCount = 0;
+                    } else {
+                        passCount++;
+                    }
+                }
+
+                currentPlayer = currentPlayer === 1 ? 2 : 1;
+                moveCount++;
+            }
+
+            // 結果を評価（簡易的）
+            if (startPlayer === 1) {
+                return captures.black - captures.white;
+            } else {
+                return captures.white - captures.black;
+            }
         }
 
         // 最善手を見つける（強化版）
