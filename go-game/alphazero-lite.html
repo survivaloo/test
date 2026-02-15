@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>9×9 AlphaZero-lite 囲碁</title>
+<style>
+:root{--bg:#0d0d0d;--bg2:#1a1a1a;--bg3:#242424;--txt:#d4d4d4;--txt2:#777;--gold:#e2a832;--green:#3ddc84;--red:#ff5252;--blue:#64b5f6}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Courier New',monospace;background:var(--bg);color:var(--txt);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px;line-height:1.5}
+h1{font-weight:900;font-size:1.6em;letter-spacing:.1em;color:var(--gold);margin-bottom:2px}
+.sub{font-size:.65em;color:var(--txt2);letter-spacing:.25em;margin-bottom:20px}
+.main{display:grid;grid-template-columns:auto 280px;gap:20px;max-width:900px;width:100%}
+@media(max-width:760px){.main{grid-template-columns:1fr;max-width:480px}}
+.bw{background:var(--bg2);border:1px solid #333;border-radius:10px;padding:16px;display:flex;flex-direction:column;align-items:center}
+canvas{border-radius:4px;cursor:crosshair}
+.binfo{font-size:.7em;color:var(--txt2);margin-top:8px;text-align:center;min-height:1.5em}
+.panel{display:flex;flex-direction:column;gap:10px}
+.card{background:var(--bg2);border:1px solid #333;border-radius:10px;padding:14px}
+.card h3{font-size:.75em;color:var(--gold);letter-spacing:.15em;margin-bottom:8px}
+.sr{display:flex;justify-content:space-between;font-size:.75em;padding:2px 0}
+.sr .v{font-weight:600}.sr .v.g{color:var(--green)}.sr .v.r{color:var(--red)}.sr .v.b{color:var(--blue)}
+.btn{padding:8px 14px;border:1px solid #444;border-radius:6px;background:var(--bg3);color:var(--txt);font-family:inherit;font-size:.75em;cursor:pointer;transition:all .15s;width:100%;text-align:center}
+.btn:hover{border-color:var(--gold);color:var(--gold)}
+.btn:disabled{opacity:.3;cursor:not-allowed}
+.btn.p{background:rgba(226,168,50,.12);border-color:var(--gold);color:var(--gold)}
+.btn.d{border-color:var(--red);color:var(--red)}
+.br{display:flex;gap:6px}.br .btn{flex:1}
+.tog{display:flex;align-items:center;gap:6px;font-size:.75em;cursor:pointer;margin-top:4px}
+.tog input{accent-color:var(--gold)}
+.log{background:var(--bg);border:1px solid #222;border-radius:6px;padding:8px;font-size:.6em;color:var(--txt2);max-height:160px;overflow-y:auto;line-height:1.6;white-space:pre-wrap}
+.prg{width:100%;height:3px;background:var(--bg);border-radius:2px;overflow:hidden;margin-top:4px}
+.prg-bar{height:100%;background:var(--gold);transition:width .3s;width:0%}
+.sc{display:flex;align-items:center;gap:6px;font-size:.7em;margin-top:6px}
+.sc input[type=range]{flex:1;accent-color:var(--gold)}
+</style>
+</head>
+<body>
+<h1>碁 AlphaZero-lite</h1>
+<div class="sub">9×9 · TACTICAL NN + MCTS · ZERO DEPENDENCIES</div>
+<div class="main">
+  <div class="bw">
+    <canvas id="cv" width="460" height="460"></canvas>
+    <div class="binfo" id="info">初期化中…</div>
+  </div>
+  <div class="panel">
+    <div class="card">
+      <h3>Controls</h3>
+      <div class="br"><button class="btn p" id="bSP">自己対局開始</button><button class="btn" id="bST" disabled>停止</button></div>
+      <div style="margin-top:8px"><button class="btn" id="bAI">AIと対局</button></div>
+      <div style="margin-top:8px"><button class="btn" id="bPS">パス</button></div>
+      <div class="br" style="margin-top:8px"><button class="btn" id="bSV">保存</button><button class="btn d" id="bDL">削除</button></div>
+      <label class="tog"><input type="checkbox" id="cTr" checked> 学習ON</label>
+      <div class="sc"><span>MCTS:</span><input type="range" id="simR" min="5" max="60" value="25"><span id="simV">25</span></div>
+      <div class="prg"><div class="prg-bar" id="prg"></div></div>
+    </div>
+    <div class="card">
+      <h3>Statistics</h3>
+      <div class="sr"><span>対局数</span><span class="v b" id="xG">0</span></div>
+      <div class="sr"><span>黒勝率</span><span class="v g" id="xB">-</span></div>
+      <div class="sr"><span>白勝率</span><span class="v r" id="xW">-</span></div>
+      <div class="sr"><span>平均手数</span><span class="v b" id="xM">-</span></div>
+      <div class="sr"><span>学習回数</span><span class="v g" id="xS">0</span></div>
+      <div class="sr"><span>Loss</span><span class="v b" id="xL">-</span></div>
+    </div>
+    <div class="card"><h3>Log</h3><div class="log" id="log"></div></div>
+  </div>
+</div>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+function setInfo(m){$('info').textContent=m;}
+function lg(m){const el=$('log');el.textContent+=`[${new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}] ${m}\n`;el.scrollTop=el.scrollHeight;}
+const yieldUI=()=>new Promise(r=>setTimeout(r,0));
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+// ================================================================
+//  Go Rules (9x9) — with tactical analysis methods
+// ================================================================
+const SZ=9,NB=81,PASS=81,NA=82,MT=0,BK=1,WH=2;
+const DIR=[[0,1],[1,0],[0,-1],[-1,0]],COORDS='ABCDEFGHJ';
+const inB=(x,y)=>x>=0&&x<SZ&&y>=0&&y<SZ;
+const aStr=a=>a===PASS?'パス':COORDS[a%SZ]+(SZ-(a/SZ|0));
+
+class Board {
+constructor(){this.b=new Int8Array(NB);this.cur=BK;this.ko=-1;this.ps=0;this.mc=0;}
+clone(){const c=new Board();c.b.set(this.b);c.cur=this.cur;c.ko=this.ko;c.ps=this.ps;c.mc=this.mc;return c;}
+at(x,y){return this.b[x*SZ+y];}
+
+flood(startK) {
+    const col = this.b[startK];
+    if (!col) return { stones: [], libs: 0, libSet: new Set() };
+    const stones = [], libSet = new Set(), vis = new Uint8Array(NB);
+    const stk = [startK];
+    while (stk.length) {
+        const k = stk.pop();
+        if (vis[k]) continue; vis[k] = 1; stones.push(k);
+        const x = k/SZ|0, y = k%SZ;
+        for (const [dx,dy] of DIR) {
+            const nx=x+dx, ny=y+dy;
+            if (!inB(nx,ny)) continue;
+            const nk = nx*SZ+ny;
+            if (this.b[nk] === MT) libSet.add(nk);
+            else if (this.b[nk] === col && !vis[nk]) stk.push(nk);
+        }
+    }
+    return { stones, libs: libSet.size, libSet };
+}
+
+legal(a) {
+    if (a===PASS) return true;
+    if (a<0||a>=NB||this.b[a]!==MT||a===this.ko) return false;
+    const x=a/SZ|0,y=a%SZ,opp=3-this.cur;
+    this.b[a] = this.cur;
+    let caps = false;
+    for (const [dx,dy] of DIR) {
+        const nx=x+dx, ny=y+dy;
+        if (inB(nx,ny) && this.b[nx*SZ+ny]===opp && this.flood(nx*SZ+ny).libs===0) { caps=true; break; }
+    }
+    if (!caps && this.flood(a).libs===0) { this.b[a]=MT; return false; }
+    this.b[a] = MT; return true;
+}
+
+moves(){const m=[];for(let a=0;a<NB;a++)if(this.b[a]===MT&&this.legal(a))m.push(a);m.push(PASS);return m;}
+boardMoves(){const m=[];for(let a=0;a<NB;a++)if(this.b[a]===MT&&this.legal(a))m.push(a);return m;}
+
+play(a) {
+    if (a===PASS) { this.ps++; this.ko=-1; this.cur=3-this.cur; this.mc++; return; }
+    this.ps=0; const x=a/SZ|0,y=a%SZ,opp=3-this.cur;
+    this.b[a]=this.cur; const captured=[];
+    for (const [dx,dy] of DIR) {
+        const nx=x+dx,ny=y+dy;
+        if (inB(nx,ny)&&this.b[nx*SZ+ny]===opp) {
+            const g=this.flood(nx*SZ+ny);
+            if (!g.libs) { g.stones.forEach(k=>{this.b[k]=MT}); captured.push(...g.stones); }
+        }
+    }
+    this.ko=-1;
+    if (captured.length===1 && this.flood(a).stones.length===1) this.ko=captured[0];
+    this.cur=3-this.cur; this.mc++;
+}
+
+over(){return this.ps>=2||this.mc>200;}
+
+score() {
+    const vis=new Uint8Array(NB); let bs=0,ws=0;
+    for (let k=0;k<NB;k++) { if(this.b[k]===BK)bs++; if(this.b[k]===WH)ws++; }
+    for (let k=0;k<NB;k++) {
+        if (this.b[k]!==MT||vis[k]) continue;
+        const reg=[]; let tB=0,tW=0; const stk=[k],v2=new Uint8Array(NB);
+        while (stk.length) {
+            const p=stk.pop(); if(v2[p])continue; v2[p]=1;
+            if(this.b[p]===BK){tB=1;continue;} if(this.b[p]===WH){tW=1;continue;}
+            reg.push(p); vis[p]=1;
+            const px=p/SZ|0,py=p%SZ;
+            for(const[dx,dy]of DIR){const nx=px+dx,ny=py+dy;if(inB(nx,ny))stk.push(nx*SZ+ny);}
+        }
+        if(tB&&!tW)bs+=reg.length; else if(tW&&!tB)ws+=reg.length;
+    }
+    return {bk:bs, wh:ws+6.5};
+}
+winner(){const s=this.score();return s.bk>s.wh?1:s.wh>s.bk?-1:0;}
+emptyCount(){let c=0;for(let i=0;i<NB;i++)if(this.b[i]===MT)c++;return c;}
+
+// ============================================================
+//  TACTICAL ANALYSIS — the heart of intelligent play
+// ============================================================
+
+// Get all groups with their liberties
+allGroups() {
+    const vis = new Uint8Array(NB), groups = [];
+    for (let k=0; k<NB; k++) {
+        if (!this.b[k] || vis[k]) continue;
+        const g = this.flood(k);
+        g.color = this.b[k];
+        groups.push(g);
+        g.stones.forEach(s => { vis[s] = 1; });
+    }
+    return groups;
+}
+
+// Analyze a move for the current player
+// Returns: { captureCount, capturedStones, savesAtari, createsAtari, selfLibs }
+analyzeMove(a) {
+    if (a === PASS) return { captureCount:0, capturedStones:[], savesAtari:false, createsAtari:false, selfLibs:0, atariSaveSize:0 };
+    const x=a/SZ|0, y=a%SZ, me=this.cur, opp=3-me;
+    const result = { captureCount:0, capturedStones:[], savesAtari:false, createsAtari:false, selfLibs:0, atariSaveSize:0 };
+
+    // Simulate the move
+    const saved = Int8Array.from(this.b);
+    this.b[a] = me;
+
+    // Check captures
+    for (const [dx,dy] of DIR) {
+        const nx=x+dx, ny=y+dy;
+        if (inB(nx,ny) && this.b[nx*SZ+ny]===opp) {
+            const g = this.flood(nx*SZ+ny);
+            if (g.libs === 0) {
+                result.captureCount += g.stones.length;
+                result.capturedStones.push(...g.stones);
+            }
+        }
+    }
+
+    // Temporarily remove captured stones to check post-move state
+    result.capturedStones.forEach(k => { this.b[k] = MT; });
+
+    // Check if this saves any own group from atari
+    // (own groups that were in atari before the move)
+    const selfGroup = this.flood(a);
+    result.selfLibs = selfGroup.libs;
+
+    // Check atari creation on opponent
+    for (const [dx,dy] of DIR) {
+        const nx=x+dx, ny=y+dy;
+        if (inB(nx,ny) && this.b[nx*SZ+ny]===opp) {
+            const g = this.flood(nx*SZ+ny);
+            if (g.libs === 1) result.createsAtari = true;
+        }
+    }
+
+    // Restore board
+    this.b.set(saved);
+
+    // Check if move saves own atari — look at own groups adjacent to this point
+    // that currently have 1 liberty (and that liberty is 'a')
+    for (const [dx,dy] of DIR) {
+        const nx=x+dx, ny=y+dy;
+        if (inB(nx,ny) && this.b[nx*SZ+ny]===me) {
+            const g = this.flood(nx*SZ+ny);
+            if (g.libs === 1) {
+                result.savesAtari = true;
+                result.atariSaveSize = Math.max(result.atariSaveSize, g.stones.length);
+            }
+        }
+    }
+
+    return result;
+}
+
+// Get tactical scores for all legal moves
+tacticalScores() {
+    const legal = this.boardMoves();
+    const scores = new Float32Array(NA); // tactical bonus per action
+
+    for (const a of legal) {
+        const t = this.analyzeMove(a);
+        let score = 0;
+
+        // Capturing stones: very high value, proportional to stones captured
+        if (t.captureCount > 0) score += 5.0 + t.captureCount * 3.0;
+
+        // Saving own groups from capture: very high, proportional to group size
+        if (t.savesAtari) score += 6.0 + t.atariSaveSize * 2.5;
+
+        // Putting opponent in atari: moderate value (sets up future capture)
+        if (t.createsAtari) score += 2.5;
+
+        // Prefer moves with more liberties (avoid self-atari)
+        if (t.selfLibs === 1 && t.captureCount === 0) score -= 2.0; // self-atari penalty
+        else if (t.selfLibs >= 3) score += 0.3;
+
+        // Connection bonus: if adjacent to own stones
+        const x=a/SZ|0, y=a%SZ;
+        let adjOwn = 0, adjOpp = 0;
+        for (const [dx,dy] of DIR) {
+            const nx=x+dx, ny=y+dy;
+            if (inB(nx,ny)) {
+                if (this.b[nx*SZ+ny] === this.cur) adjOwn++;
+                else if (this.b[nx*SZ+ny] === (3-this.cur)) adjOpp++;
+            }
+        }
+        if (adjOwn > 0 && adjOpp > 0) score += 0.5; // contact fight bonus
+        if (adjOwn >= 2) score += 0.3; // connecting own stones
+
+        scores[a] = score;
+    }
+
+    // PASS gets negative score unless endgame
+    const emptyRatio = this.emptyCount() / NB;
+    scores[PASS] = emptyRatio > 0.2 ? -10.0 : emptyRatio > 0.05 ? -3.0 : 0.0;
+
+    return scores;
+}
+
+// Extended feature tensor: [NB * 7]
+// ch0: own stones, ch1: opp stones, ch2: turn
+// ch3: own groups in atari (1 lib), ch4: opp groups in atari
+// ch5: own liberty count (normalized), ch6: opp liberty count (normalized)
+tensorExt(persp) {
+    const p = persp||this.cur, op = 3-p;
+    const d = new Float32Array(NB * 7);
+    // Basic planes
+    for (let i=0;i<NB;i++) {
+        if (this.b[i]===p) d[i]=1;
+        if (this.b[i]===op) d[NB+i]=1;
+    }
+    const tv = this.cur===p ? 1 : 0;
+    for (let i=0;i<NB;i++) d[NB*2+i] = tv;
+
+    // Group analysis
+    const vis = new Uint8Array(NB);
+    for (let k=0; k<NB; k++) {
+        if (!this.b[k] || vis[k]) continue;
+        const g = this.flood(k);
+        const col = this.b[k];
+        const isOwn = col === p;
+        g.stones.forEach(s => {
+            vis[s] = 1;
+            if (isOwn) {
+                if (g.libs === 1) d[NB*3+s] = 1; // own atari
+                d[NB*5+s] = Math.min(g.libs, 8) / 8; // own liberties
+            } else {
+                if (g.libs === 1) d[NB*4+s] = 1; // opp atari
+                d[NB*6+s] = Math.min(g.libs, 8) / 8; // opp liberties
+            }
+        });
+    }
+    return d;
+}
+
+}
+
+// ================================================================
+//  Neural Network: 7-channel input
+//  Input(567) → Dense(64, ReLU) → Dense(32, ReLU) → Policy(82) + Value(1)
+// ================================================================
+const FEAT = NB * 7; // 567
+const H1 = 64, H2 = 32;
+
+function randn(n,std){const a=new Float32Array(n);for(let i=0;i<n;i++){let u,v;do{u=Math.random()}while(!u);v=Math.random();a[i]=Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)*std;}return a;}
+
+// Positional bias: center/3rd-4th line preference, strong PASS penalty
+const POS_BIAS = new Float32Array(NA);
+(function(){
+for(let x=0;x<SZ;x++)for(let y=0;y<SZ;y++){
+const dx=Math.min(x,SZ-1-x), dy=Math.min(y,SZ-1-y), edge=Math.min(dx,dy);
+if(edge>=2&&edge<=3) POS_BIAS[x*SZ+y]=0.4;
+else if(edge>=1) POS_BIAS[x*SZ+y]=0.1;
+else POS_BIAS[x*SZ+y]=-0.3;
+}
+POS_BIAS[PASS]=-5.0;
+})();
+
+let net = {
+w1:randn(H1*FEAT,Math.sqrt(2/FEAT)), b1:new Float32Array(H1),
+w2:randn(H2*H1,Math.sqrt(2/H1)),     b2:new Float32Array(H2),
+wp:randn(NA*H2,Math.sqrt(1/H2)),      bp:Float32Array.from(POS_BIAS),
+wv:randn(H2,Math.sqrt(1/H2)),         bv:new Float32Array(1),
+};
+
+let adam={lr:0.001,b1:0.9,b2:0.999,eps:1e-8,t:0,m:{},v:{}};
+for(const k of Object.keys(net)){adam.m[k]=new Float32Array(net[k].length);adam.v[k]=new Float32Array(net[k].length);}
+
+function nnFwd(inp){
+const z1=new Float32Array(H1),a1=new Float32Array(H1);
+for(let i=0;i<H1;i++){let s=net.b1[i];const o=i*FEAT;for(let j=0;j<FEAT;j++)s+=net.w1[o+j]*inp[j];
+z1[i]=isFinite(s)?s:0;a1[i]=z1[i]>0?z1[i]:0;}
+const z2=new Float32Array(H2),a2=new Float32Array(H2);
+for(let i=0;i<H2;i++){let s=net.b2[i];const o=i*H1;for(let j=0;j<H1;j++)s+=net.w2[o+j]*a1[j];
+z2[i]=isFinite(s)?s:0;a2[i]=z2[i]>0?z2[i]:0;}
+const zp=new Float32Array(NA);
+for(let i=0;i<NA;i++){let s=net.bp[i];const o=i*H2;for(let j=0;j<H2;j++)s+=net.wp[o+j]*a2[j];
+zp[i]=isFinite(s)?Math.max(-30,Math.min(30,s)):0;}
+let mx=zp[0];for(let i=1;i<NA;i++)if(zp[i]>mx)mx=zp[i];
+const ep=new Float32Array(NA);let se=0;
+for(let i=0;i<NA;i++){ep[i]=Math.exp(zp[i]-mx);se+=ep[i];}
+const pol=new Float32Array(NA);
+if(se>0)for(let i=0;i<NA;i++)pol[i]=ep[i]/se;else for(let i=0;i<NA;i++)pol[i]=1/NA;
+let zv=net.bv[0];for(let j=0;j<H2;j++)zv+=net.wv[j]*a2[j];
+if(!isFinite(zv))zv=0;zv=Math.max(-8,Math.min(8,zv));
+return{inp,z1,a1,z2,a2,zp,pol,zv,val:Math.tanh(zv)};
+}
+
+function nnBwd(f,tP,tZ){
+const g={};for(const k of Object.keys(net))g[k]=new Float32Array(net[k].length);
+const dP=new Float32Array(NA);for(let i=0;i<NA;i++)dP[i]=f.pol[i]-tP[i];
+const dV=2*(f.val-tZ)*(1-f.val*f.val);
+const da2=new Float32Array(H2);
+for(let i=0;i<NA;i++){g.bp[i]=dP[i];const o=i*H2;for(let j=0;j<H2;j++){g.wp[o+j]=dP[i]*f.a2[j];da2[j]+=dP[i]*net.wp[o+j];}}
+g.bv[0]=dV;for(let j=0;j<H2;j++){g.wv[j]=dV*f.a2[j];da2[j]+=dV*net.wv[j];}
+const da1=new Float32Array(H1);
+for(let i=0;i<H2;i++){const dz=f.z2[i]>0?da2[i]:0;g.b2[i]=dz;const o=i*H1;
+for(let j=0;j<H1;j++){g.w2[o+j]=dz*f.a1[j];da1[j]+=dz*net.w2[o+j];}}
+for(let i=0;i<H1;i++){const dz=f.z1[i]>0?da1[i]:0;g.b1[i]=dz;const o=i*FEAT;
+for(let j=0;j<FEAT;j++)g.w1[o+j]=dz*f.inp[j];}
+return g;
+}
+
+// ================================================================
+//  TACTICAL POLICY BLENDING
+//  Combines NN policy with hand-crafted tactical scores
+// ================================================================
+const TACTIC_WEIGHT = 0.6; // How much tactical heuristics influence policy (0=pure NN, 1=pure tactics)
+
+function blendedPolicy(bd, persp) {
+const f = nnFwd(bd.tensorExt(persp));
+const tac = bd.tacticalScores();
+const legal = bd.moves();
+const blended = new Float32Array(NA);
+
+// Convert tactical scores to probabilities via softmax
+let tacMax = -Infinity;
+for (const m of legal) if (tac[m] > tacMax) tacMax = tac[m];
+const tacExp = new Float32Array(NA);
+let tacSum = 0;
+for (const m of legal) { tacExp[m] = Math.exp(tac[m] - tacMax); tacSum += tacExp[m]; }
+const tacProb = new Float32Array(NA);
+if (tacSum > 0) for (const m of legal) tacProb[m] = tacExp[m] / tacSum;
+
+// NN policy (masked to legal moves)
+let nnSum = 0;
+for (const m of legal) nnSum += f.pol[m];
+const nnProb = new Float32Array(NA);
+if (nnSum > 1e-8) for (const m of legal) nnProb[m] = f.pol[m] / nnSum;
+else for (const m of legal) nnProb[m] = 1 / legal.length;
+
+// Blend: (1-w)*NN + w*tactical
+let sum = 0;
+for (const m of legal) {
+    blended[m] = (1 - TACTIC_WEIGHT) * nnProb[m] + TACTIC_WEIGHT * tacProb[m];
+    sum += blended[m];
+}
+if (sum > 1e-8) for (let i=0;i<NA;i++) blended[i] /= sum;
+
+return { policy: blended, value: f.val };
+}
+
+// ================================================================
+//  MCTS with tactical policy
+// ================================================================
+const CPUCT = 1.5;
+let SIMS = 25;
+
+class MCNode {
+constructor(prior){this.prior=prior;this.visits=0;this.totalVal=0;this.kids=null;}
+q(){return this.visits>0?this.totalVal/this.visits:0;}
+ucb(pn){return this.q()+CPUCT*this.prior*Math.sqrt(pn)/(1+this.visits);}
+}
+
+function dirichletNoise(n,alpha){
+const noise=new Float32Array(n);
+for(let i=0;i<n;i++){let x=0;for(let j=0;j<Math.max(1,Math.ceil(alpha*3));j++)x+=-Math.log(Math.random()+1e-10);noise[i]=x;}
+let s=0;for(let i=0;i<n;i++)s+=noise[i];if(s>0)for(let i=0;i<n;i++)noise[i]/=s;return noise;
+}
+
+async function asyncMCTS(board, sims, addNoise) {
+const { policy } = blendedPolicy(board, board.cur);
+const legalMoves = board.moves();
+const root = new MCNode(1);
+root.kids = new Map();
+const noise = addNoise ? dirichletNoise(legalMoves.length, 0.3) : null;
+const eps = 0.25;
+for (let i=0;i<legalMoves.length;i++) {
+const m = legalMoves[i];
+let prior = policy[m];
+if (noise) prior = (1-eps)*prior + eps*noise[i];
+root.kids.set(m, new MCNode(prior));
+}
+
+for (let sim=0; sim<sims; sim++) {
+    let node=root; const bc=board.clone(); const path=[node];
+    while(node.kids&&node.kids.size>0&&node.visits>0){
+        let bestA=-1,bestU=-Infinity;
+        for(const[a,ch]of node.kids){const u=ch.ucb(node.visits);if(u>bestU){bestU=u;bestA=a;}}
+        if(bestA<0)break; bc.play(bestA); node=node.kids.get(bestA); path.push(node);
+    }
+    let leafVal;
+    if(bc.over()){const w=bc.winner();leafVal=bc.cur===BK?-w:w;}
+    else{
+        const{policy:lp,value:v}=blendedPolicy(bc,bc.cur);
+        leafVal=v;
+        if(!node.kids){node.kids=new Map();for(const m of bc.moves())node.kids.set(m,new MCNode(lp[m]));}
+    }
+    let v=leafVal;for(let i=path.length-1;i>=0;i--){path[i].visits++;path[i].totalVal+=v;v=-v;}
+    if(sim%3===0)await yieldUI();
+}
+const pi=new Float32Array(NA);let total=0;
+if(root.kids)for(const[a,ch]of root.kids){pi[a]=ch.visits;total+=ch.visits;}
+if(total>0)for(let i=0;i<NA;i++)pi[i]/=total;
+return pi;
+}
+
+function pickAction(pi,temp){
+if(temp<0.05){let best=PASS,bv=-1;for(let i=0;i<NA;i++)if(pi[i]>bv){bv=pi[i];best=i;}return best;}
+const w=new Float32Array(NA);let s=0;for(let i=0;i<NA;i++){w[i]=Math.pow(pi[i],1/temp);s+=w[i];}
+if(!s)return PASS;let r=Math.random()*s;for(let i=0;i<NA;i++){r-=w[i];if(r<=0)return i;}return PASS;
+}
+
+// ================================================================
+//  Human vs AI
+// ================================================================
+let humanBoard=null, humanTurn=false, aiLock=false;
+
+function beginHumanGame(){
+humanBoard=new Board();humanTurn=true;aiLock=false;
+drawBoard(humanBoard);setInfo('あなたの番（黒）— 盤面をクリック');lg('対人戦開始');
+}
+
+function onBoardClick(action){
+if(!humanBoard||!humanTurn||aiLock)return;
+if(!humanBoard.legal(action))return;
+humanTurn=false;lg('あなた: '+aStr(action));
+humanBoard.play(action);drawBoard(humanBoard);
+if(humanBoard.over()){showResult();return;}
+aiLock=true;setInfo('AI思考中…');triggerAI();
+}
+
+async function triggerAI(){
+try{
+await sleep(50);if(!humanBoard){aiLock=false;return;}
+const t0=performance.now();
+const pi=await asyncMCTS(humanBoard,SIMS,false);
+if(!humanBoard){aiLock=false;return;}
+const action=pickAction(pi,0.1);
+const ms=(performance.now()-t0)|0;
+
+    // Log tactical info
+    if(action!==PASS){
+        const info=humanBoard.analyzeMove(action);
+        let detail='';
+        if(info.captureCount>0)detail+=` 取${info.captureCount}子`;
+        if(info.savesAtari)detail+=` 防御${info.atariSaveSize}子`;
+        if(info.createsAtari)detail+=' アタリ';
+        lg('AI: '+aStr(action)+detail+' ('+ms+'ms)');
+    }else{lg('AI: パス ('+ms+'ms)');}
+
+    humanBoard.play(action);drawBoard(humanBoard);
+    if(humanBoard.over()){showResult();aiLock=false;return;}
+    humanTurn=true;aiLock=false;setInfo('あなたの番（黒）');
+}catch(e){lg('AIエラー: '+e.message);humanTurn=true;aiLock=false;setInfo('エラー — もう一度どうぞ');}
+}
+
+function showResult(){
+if(!humanBoard)return;const w=humanBoard.winner(),s=humanBoard.score();
+const msg=w===1?'黒（あなた）の勝ち！':w===-1?'白（AI）の勝ち':'引き分け';
+setInfo(`終局: ${msg} [黒${s.bk} 白${s.wh.toFixed(1)}]`);lg('対人戦: '+msg);
+humanBoard=null;humanTurn=false;
+}
+
+// ================================================================
+//  Self-Play + Training
+// ================================================================
+let running=false,buf=[],tCnt=0;
+let stats={g:0,bw:0,ww:0,tm:0,loss:0};
+const BS=32,MBF=2000;
+
+async function selfPlayLoop(){
+running=true;humanBoard=null;humanTurn=false;
+$('bSP').disabled=true;$('bST').disabled=false;$('bAI').disabled=true;
+lg('自己対局ループ開始');
+while(running){
+const gn=stats.g+1;lg('Game #'+gn);const t0=performance.now();
+const bd=new Board();const gameData=[];
+while(!bd.over()&&running){
+const persp=bd.cur,st=bd.tensorExt(persp);
+const temp=bd.mc<10?1.0:0.15;
+const pi=await asyncMCTS(bd,SIMS,true);
+const action=pickAction(pi,temp);
+gameData.push({state:st,pi:Array.from(pi),player:persp});
+bd.play(action);drawBoard(bd);
+$('prg').style.width=Math.min(100,bd.mc/120*100)+'%';
+setInfo('#'+gn+' 手'+bd.mc+': '+aStr(action));
+}
+if(!running)break;
+const winner=bd.winner();const sec=((performance.now()-t0)/1000).toFixed(1);
+stats.g++;stats.tm+=bd.mc;
+if(winner===1)stats.bw++;if(winner===-1)stats.ww++;
+const sc=bd.score();
+lg('#'+gn+' '+(winner===1?'黒勝':winner===-1?'白勝':'引分')+' [黒'+sc.bk+' 白'+sc.wh.toFixed(1)+'] '+bd.mc+'手 '+sec+'s');
+const td=gameData.map(d=>({s:d.state,p:d.pi,z:d.player===BK?winner:-winner}));
+buf.push(...td);if(buf.length>MBF)buf=buf.slice(-MBF);
+if($('cTr').checked&&buf.length>=BS){for(let i=0;i<3;i++){const l=doTrain();if(l>0)stats.loss=l;}
+lg('学習: loss='+stats.loss.toFixed(4)+' buf='+buf.length);}
+if(stats.g%5===0)saveModel();updStats();$('prg').style.width='0%';await sleep(30);
+}
+$('bSP').disabled=false;$('bST').disabled=true;$('bAI').disabled=false;lg('停止');
+}
+
+function doTrain(){
+if(buf.length<BS)return 0;const batch=[];
+for(let i=0;i<BS;i++)batch.push(buf[(Math.random()*buf.length)|0]);
+const acc={};for(const k of Object.keys(net))acc[k]=new Float32Array(net[k].length);let tL=0;
+for(const s of batch){const f=nnFwd(s.s);const tp=new Float32Array(s.p);
+let pL=0;for(let i=0;i<NA;i++){if(tp[i]>0)pL-=tp[i]*Math.log(f.pol[i]+1e-8);}tL+=pL+(f.val-s.z)**2;
+const g=nnBwd(f,tp,s.z);for(const k of Object.keys(net)){const gk=g[k],ak=acc[k];for(let i=0;i<gk.length;i++)ak[i]+=gk[i]/BS;}}
+adam.t++;const c1=1-Math.pow(adam.b1,adam.t),c2=1-Math.pow(adam.b2,adam.t);
+for(const k of Object.keys(net)){const gk=acc[k],w=net[k],m=adam.m[k],v=adam.v[k];
+for(let i=0;i<w.length;i++){m[i]=adam.b1*m[i]+(1-adam.b1)*gk[i];v[i]=adam.b2*v[i]+(1-adam.b2)*gk[i]*gk[i];
+w[i]-=adam.lr*(m[i]/c1)/(Math.sqrt(v[i]/c2)+adam.eps);}}
+tCnt++;return tL/BS;
+}
+
+// ================================================================
+//  Persistence
+// ================================================================
+const SK='go9x9v7';
+function saveModel(){try{const d={};for(const k of Object.keys(net))d[k]=Array.from(net[k]);d._at=adam.t;
+for(const k of Object.keys(net)){d['m_'+k]=Array.from(adam.m[k]);d['v_'+k]=Array.from(adam.v[k]);}
+d._buf=buf.slice(-80).map(b=>({s:Array.from(b.s),p:b.p,z:b.z}));d._st=stats;d._tc=tCnt;
+localStorage.setItem(SK,JSON.stringify(d));lg('保存完了');}catch(e){lg('保存エラー: '+e.message);}}
+function loadModel(){try{const j=localStorage.getItem(SK);if(!j)return false;const d=JSON.parse(j);
+for(const k of Object.keys(net)){if(d[k])net[k]=new Float32Array(d[k]);}
+if(d._at)adam.t=d._at;for(const k of Object.keys(net)){if(d['m_'+k])adam.m[k]=new Float32Array(d['m_'+k]);if(d['v_'+k])adam.v[k]=new Float32Array(d['v_'+k]);}
+if(d._buf)buf=d._buf.map(b=>({s:new Float32Array(b.s),p:b.p,z:b.z}));if(d._st)stats=d._st;if(d._tc)tCnt=d._tc;
+lg('モデル読み込み完了');return true;}catch(e){return false;}}
+
+// ================================================================
+//  Board Drawing
+// ================================================================
+const cv=$('cv'),cx=cv.getContext('2d'),CL=46,MRG=30,STR=20;
+function drawBoard(bd){
+const W=cv.width,H=cv.height;
+const bg=cx.createLinearGradient(0,0,W,H);bg.addColorStop(0,'#E0C06A');bg.addColorStop(1,'#CCAA48');
+cx.fillStyle=bg;cx.fillRect(0,0,W,H);
+cx.strokeStyle='rgba(139,105,20,.04)';cx.lineWidth=1;
+for(let i=0;i<H;i+=2){cx.beginPath();cx.moveTo(0,i);cx.lineTo(W,i+Math.sin(i*.08)*1.5);cx.stroke();}
+cx.strokeStyle='#333';cx.lineWidth=.8;
+for(let i=0;i<SZ;i++){const p=MRG+i*CL;cx.beginPath();cx.moveTo(p,MRG);cx.lineTo(p,MRG+(SZ-1)*CL);cx.stroke();
+cx.beginPath();cx.moveTo(MRG,p);cx.lineTo(MRG+(SZ-1)*CL,p);cx.stroke();}
+cx.fillStyle='#333';for(const r of[2,4,6])for(const c of[2,4,6]){cx.beginPath();cx.arc(MRG+c*CL,MRG+r*CL,3,0,Math.PI*2);cx.fill();}
+cx.fillStyle='rgba(80,60,20,.5)';cx.font='10px monospace';cx.textAlign='center';cx.textBaseline='middle';
+for(let i=0;i<SZ;i++){cx.fillText(COORDS[i],MRG+i*CL,MRG-16);cx.fillText(String(SZ-i),MRG-16,MRG+i*CL);}
+if(!bd)return;
+
+// Highlight atari groups
+const groups=bd.allGroups();
+for(const g of groups){
+    if(g.libs===1){
+        const col=g.color===BK?'rgba(255,80,80,0.25)':'rgba(80,80,255,0.25)';
+        for(const k of g.stones){
+            const x=k/SZ|0,y=k%SZ,px=MRG+y*CL,py=MRG+x*CL;
+            cx.beginPath();cx.arc(px,py,STR+3,0,Math.PI*2);cx.fillStyle=col;cx.fill();
+        }
+    }
+}
+
+for(let x=0;x<SZ;x++)for(let y=0;y<SZ;y++){const c=bd.at(x,y);if(!c)continue;
+    const px=MRG+y*CL,py=MRG+x*CL;
+    cx.beginPath();cx.arc(px+1.5,py+1.5,STR,0,Math.PI*2);cx.fillStyle='rgba(0,0,0,.25)';cx.fill();
+    cx.beginPath();cx.arc(px,py,STR,0,Math.PI*2);
+    if(c===BK){const g=cx.createRadialGradient(px-4,py-4,2,px,py,STR);g.addColorStop(0,'#555');g.addColorStop(.6,'#222');g.addColorStop(1,'#000');cx.fillStyle=g;}
+    else{const g=cx.createRadialGradient(px-4,py-4,2,px,py,STR);g.addColorStop(0,'#fff');g.addColorStop(.7,'#eee');g.addColorStop(1,'#ccc');cx.fillStyle=g;}
+    cx.fill();cx.strokeStyle=c===BK?'#000':'#aaa';cx.lineWidth=.5;cx.stroke();
+    cx.beginPath();cx.arc(px-5,py-5,3.5,0,Math.PI*2);cx.fillStyle=c===BK?'rgba(255,255,255,.07)':'rgba(255,255,255,.5)';cx.fill();}
+}
+
+cv.addEventListener('click',e=>{const r=cv.getBoundingClientRect();
+const col=Math.round(((e.clientX-r.left)*(cv.width/r.width)-MRG)/CL);
+const row=Math.round(((e.clientY-r.top)*(cv.height/r.height)-MRG)/CL);
+if(col>=0&&col<SZ&&row>=0&&row<SZ)onBoardClick(row*SZ+col);});
+
+// ================================================================
+//  UI
+// ================================================================
+function updStats(){$('xG').textContent=stats.g;
+$('xB').textContent=stats.g?(stats.bw/stats.g*100).toFixed(1)+'%':'-';
+$('xW').textContent=stats.g?(stats.ww/stats.g*100).toFixed(1)+'%':'-';
+$('xM').textContent=stats.g?(stats.tm/stats.g).toFixed(1):'-';
+$('xS').textContent=tCnt;$('xL').textContent=stats.loss?stats.loss.toFixed(4):'-';}
+$('simR').addEventListener('input',function(){SIMS=+this.value;$('simV').textContent=SIMS;});
+$('bSP').addEventListener('click',()=>{if(!running)selfPlayLoop();});
+$('bST').addEventListener('click',()=>{running=false;});
+$('bAI').addEventListener('click',()=>{if(!running&&!humanBoard)beginHumanGame();});
+$('bPS').addEventListener('click',()=>onBoardClick(PASS));
+$('bSV').addEventListener('click',saveModel);
+$('bDL').addEventListener('click',()=>{if(!confirm('モデルを削除しますか？'))return;
+running=false;humanBoard=null;humanTurn=false;try{localStorage.removeItem(SK);}catch(e){}
+buf=[];tCnt=0;stats={g:0,bw:0,ww:0,tm:0,loss:0};
+net.w1=randn(H1*FEAT,Math.sqrt(2/FEAT));net.b1=new Float32Array(H1);
+net.w2=randn(H2*H1,Math.sqrt(2/H1));net.b2=new Float32Array(H2);
+net.wp=randn(NA*H2,Math.sqrt(1/H2));net.bp=Float32Array.from(POS_BIAS);
+net.wv=randn(H2,Math.sqrt(1/H2));net.bv=new Float32Array(1);
+adam.t=0;for(const k of Object.keys(net)){adam.m[k]=new Float32Array(net[k].length);adam.v[k]=new Float32Array(net[k].length);}
+updStats();drawBoard(null);lg('初期化完了');});
+
+// Boot
+if(loadModel())updStats();
+drawBoard(null);setInfo('準備完了 — 自己対局 or AIと対局');
+lg('9×9 Tactical AlphaZero Engine ready');
+lg('Features: 7ch (own/opp/turn/ownAtari/oppAtari/ownLibs/oppLibs)');
+lg('Tactical: capture(+5~8) save(+6~9) atari(+2.5) selfAtari(-2)');
+lg('Policy: 60% tactical + 40% NN blend');
+lg('パラメータ: '+Object.values(net).reduce((s,a)=>s+a.length,0).toLocaleString());
+</script>
+</body>
+</html>
