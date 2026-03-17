@@ -7,6 +7,10 @@ Amazon.co.jp + 国内主要電子部品ショップの在庫状況をチェッ�
 import requests
 from bs4 import BeautifulSoup
 import re
+import sys
+import time
+import json
+import argparse
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -425,28 +429,127 @@ def main():
     print(f"  {len(SHOPS)} ショップの在庫を確認中...")
     print()
 
+    results = run_check()
+    for r in results:
+        icon = status_icon(r.status)
+        print(f"    {icon} {r.shop}: {r.status}")
+
+    print_results(results)
+    export_markdown(results)
+
+
+def run_check() -> list[StockResult]:
+    """在庫チェックを実行し結果を返す"""
     results = []
     with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {executor.submit(check_shop, shop): shop for shop in SHOPS}
         for future in as_completed(futures):
             shop = futures[future]
             try:
-                result = future.result()
-                icon = status_icon(result.status)
-                print(f"    {icon} {result.shop}: {result.status}")
-                results.append(result)
+                results.append(future.result())
             except Exception as e:
-                print(f"    ? {shop['shop']}: エラー ({e})")
-                results.append(StockResult(shop["shop"], shop["url"], "確認不可",
-                                           note=str(e)))
+                results.append(StockResult(shop["shop"], shop["url"], "確認不可", note=str(e)))
 
-    # 元の順序でソート
     shop_order = {s["shop"]: i for i, s in enumerate(SHOPS)}
     results.sort(key=lambda r: shop_order.get(r.shop, 999))
+    return results
 
-    print_results(results)
-    export_markdown(results)
+
+# AI HAT+ 2 (40TOPS) の在庫監視対象ショップ名
+TARGET_SHOPS_40TOPS = {
+    "Amazon.co.jp (AI HAT+ 2 / 40TOPS)",
+    "スイッチサイエンス",
+    "KSY (公式代理店)",
+    "秋月電子通商",
+    "マルツ",
+    "千石電商",
+}
+
+
+def watch_mode(interval_min: int = 5):
+    """在庫監視モード: AI HAT+ 2 (40TOPS) の在庫が出たら通知"""
+    print()
+    print("  ╔══════════════════════════════════════════════════╗")
+    print("  ║  AI HAT+ 2 (40TOPS) 在庫監視モード              ║")
+    print(f"  ║  チェック間隔: {interval_min}分                             ║")
+    print("  ║  在庫が見つかったら通知します                    ║")
+    print("  ║  Ctrl+C で停止                                  ║")
+    print("  ╚══════════════════════════════════════════════════╝")
+    print()
+
+    check_count = 0
+    alert_file = "/home/user/test/stock_alert.json"
+
+    try:
+        while True:
+            check_count += 1
+            now = datetime.now().strftime("%H:%M:%S")
+            print(f"  [{now}] チェック #{check_count} 実行中...", flush=True)
+
+            results = run_check()
+
+            # 40TOPS対象ショップで在庫ありを探す
+            in_stock_40tops = [
+                r for r in results
+                if r.shop in TARGET_SHOPS_40TOPS and "在庫あり" in r.status
+            ]
+
+            if in_stock_40tops:
+                # 在庫発見！
+                print()
+                print("  " + "!" * 60)
+                print("  !!!  AI HAT+ 2 (40TOPS) の在庫が見つかりました！ !!!")
+                print("  " + "!" * 60)
+                print()
+                for r in in_stock_40tops:
+                    price_str = f" ({r.price})" if r.price else ""
+                    print(f"  >>> {r.shop}{price_str}")
+                    print(f"      {r.url}")
+                print()
+
+                # ターミナルベル
+                print("\a\a\a", flush=True)
+
+                # アラートファイル出力
+                alert_data = {
+                    "found_at": datetime.now().isoformat(),
+                    "shops": [
+                        {"shop": r.shop, "url": r.url, "price": r.price, "status": r.status}
+                        for r in in_stock_40tops
+                    ],
+                }
+                with open(alert_file, "w", encoding="utf-8") as f:
+                    json.dump(alert_data, f, ensure_ascii=False, indent=2)
+                print(f"  >> アラート情報を {alert_file} に保存しました")
+
+                # Markdownも更新
+                export_markdown(results)
+                return in_stock_40tops
+            else:
+                # 在庫なし - 状況を1行で表示
+                statuses = []
+                for r in results:
+                    if r.shop in TARGET_SHOPS_40TOPS:
+                        icon = status_icon(r.status)
+                        statuses.append(f"{icon}{r.shop.split('(')[0].strip()}")
+                print(f"    在庫なし | {' / '.join(statuses)}")
+
+                next_time = datetime.now().strftime("%H:%M:%S")
+                print(f"    次回チェック: {interval_min}分後", flush=True)
+                time.sleep(interval_min * 60)
+
+    except KeyboardInterrupt:
+        print()
+        print("  監視を停止しました。")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Raspberry Pi AI HAT+ 2 在庫チェッカー")
+    parser.add_argument("--watch", action="store_true", help="在庫監視モード（在庫が出るまで繰り返しチェック）")
+    parser.add_argument("--interval", type=int, default=5, help="監視間隔（分）デフォルト: 5分")
+    args = parser.parse_args()
+
+    if args.watch:
+        watch_mode(args.interval)
+    else:
+        main()
