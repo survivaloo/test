@@ -1,6 +1,6 @@
 # Raspberry Pi AI HAT+ 2 在庫確認結果
 
-**確認日時:** 2026-03-17 01:06:40
+**確認日時:** 2026-03-17 01:11:22
 
 **製品情報:** Hailo-10H AIアクセラレータ / 40 TOPS (INT4) / 8GB RAM / $130
 
@@ -21,7 +21,7 @@
 | ショップ | 状態 | 価格 | 備考 |
 |----------|------|------|------|
 | ✕ [Amazon.co.jp (AI HAT+ 2 / 40TOPS)](https://www.amazon.co.jp/dp/B0GK251MF3) | 在庫なし | USD114.77 |  |
-| ● [Amazon.co.jp (AI HAT+ 26TOPS)](https://www.amazon.co.jp/dp/B0DPLR3RPQ) | 在庫あり（カート可） | USD 119.19 | 旧モデル |
+| ● [Amazon.co.jp (AI HAT+ 26TOPS)](https://www.amazon.co.jp/dp/B0DPLR3RPQ) | 在庫あり（カート可） | - | 旧モデル |
 | ● [Amazon.co.jp (AI HAT+ 13TOPS)](https://www.amazon.co.jp/dp/B0DPLQ9TB9) | 在庫あり（カート可） | - | 旧モデル |
 
 ## 国内電子部品ショップ
@@ -38,7 +38,7 @@
 
 ## 購入可能なショップ
 
-- **[Amazon.co.jp (AI HAT+ 26TOPS)](https://www.amazon.co.jp/dp/B0DPLR3RPQ)** - USD 119.19
+- **[Amazon.co.jp (AI HAT+ 26TOPS)](https://www.amazon.co.jp/dp/B0DPLR3RPQ)**
 - **[Amazon.co.jp (AI HAT+ 13TOPS)](https://www.amazon.co.jp/dp/B0DPLQ9TB9)**
 - **[秋月電子通商](https://akizukidenshi.com/catalog/g/g131618/)** - ￥28,820
 
