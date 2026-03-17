@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-Raspberry Pi AI HAT+ 2 在庫確認アプリ
-Amazon (US/JP) を含む複数ショップの在庫状況をチェックします。
+Raspberry Pi AI HAT+ 2 在庫確認アプリ（日本国内ショップ特化版）
+Amazon.co.jp + 国内主要電子部品ショップの在庫状況をチェックします。
 """
 
 import requests
 from bs4 import BeautifulSoup
 import re
-import sys
-import time
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Optional
@@ -17,7 +16,6 @@ from typing import Optional
 @dataclass
 class StockResult:
     shop: str
-    region: str
     url: str
     status: str  # "在庫あり", "在庫なし", "確認不可"
     price: Optional[str] = None
@@ -31,90 +29,53 @@ HEADERS = {
         "Chrome/131.0.0.0 Safari/537.36"
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9,ja;q=0.8",
+    "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
 }
 
 SHOPS = [
-    # --- Amazon ---
+    # --- Amazon.co.jp ---
+    {
+        "shop": "Amazon.co.jp (AI HAT+ 2 / 40TOPS)",
+        "url": "https://www.amazon.co.jp/dp/B0GK251MF3",
+        "checker": "amazon_jp",
+    },
     {
         "shop": "Amazon.co.jp (AI HAT+ 26TOPS)",
-        "region": "日本",
         "url": "https://www.amazon.co.jp/dp/B0DPLR3RPQ",
         "checker": "amazon_jp",
+        "note_extra": "旧モデル",
     },
     {
         "shop": "Amazon.co.jp (AI HAT+ 13TOPS)",
-        "region": "日本",
         "url": "https://www.amazon.co.jp/dp/B0DPLQ9TB9",
         "checker": "amazon_jp",
+        "note_extra": "旧モデル",
     },
-    {
-        "shop": "Amazon.com (AI Kit 13T)",
-        "region": "US",
-        "url": "https://www.amazon.com/dp/B0F95W3446",
-        "checker": "amazon_us",
-    },
-    # --- 日本ショップ ---
+    # --- 国内専門店 ---
     {
         "shop": "スイッチサイエンス",
-        "region": "日本",
         "url": "https://www.switch-science.com/products/10916",
         "checker": "switch_science",
     },
     {
-        "shop": "KSY",
-        "region": "日本",
+        "shop": "KSY (公式代理店)",
         "url": "https://raspberry-pi.ksyic.com/main/index/pdp.id/1257/pdp.open/1257",
         "checker": "ksy",
     },
-    # --- 海外ショップ ---
     {
-        "shop": "Raspberry Pi 公式",
-        "region": "UK",
-        "url": "https://www.raspberrypi.com/products/ai-hat-plus-2/",
-        "checker": "raspberrypi_official",
+        "shop": "秋月電子通商",
+        "url": "https://akizukidenshi.com/catalog/g/g131618/",
+        "checker": "akizuki",
     },
     {
-        "shop": "The Pi Hut",
-        "region": "UK",
-        "url": "https://thepihut.com/products/raspberry-pi-ai-hat-2",
-        "checker": "pihut",
+        "shop": "マルツ",
+        "url": "https://www.marutsu.co.jp/pc/i/50354161/",
+        "checker": "marutsu",
     },
     {
-        "shop": "Pimoroni",
-        "region": "UK",
-        "url": "https://shop.pimoroni.com/products/raspberry-pi-ai-hat-2",
-        "checker": "pimoroni",
-    },
-    {
-        "shop": "PiShop.us",
-        "region": "US",
-        "url": "https://www.pishop.us/product/raspberry-pi-ai-hat-2/",
-        "checker": "pishop",
-    },
-    {
-        "shop": "Adafruit",
-        "region": "US",
-        "url": "https://www.adafruit.com/product/6451",
-        "checker": "adafruit",
-    },
-    {
-        "shop": "SparkFun",
-        "region": "US",
-        "url": "https://www.sparkfun.com/raspberry-pi-ai-hat-2.html",
-        "checker": "sparkfun",
-    },
-    {
-        "shop": "CanaKit",
-        "region": "US/CA",
-        "url": "https://www.canakit.com/raspberry-pi-ai-hat-2.html",
-        "checker": "canakit",
-    },
-    {
-        "shop": "Electrokit",
-        "region": "EU",
-        "url": "https://www.electrokit.com/en/raspberry-pi-ai-hat2",
-        "checker": "electrokit",
+        "shop": "千石電商",
+        "url": "https://www.sengoku.co.jp/mod/sgk_cart/search.php?cid=&mcid=&search=AI+HAT%2B+2&x=0&y=0",
+        "checker": "sengoku",
     },
 ]
 
@@ -133,63 +94,46 @@ def check_amazon_jp(shop_info: dict) -> StockResult:
     """Amazon.co.jp の在庫確認"""
     soup = fetch_page(shop_info["url"])
     if not soup:
-        return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "確認不可",
+        return StockResult(shop_info["shop"], shop_info["url"], "確認不可",
                            note="ページ取得失敗 (Bot検出の可能性)")
 
     text = soup.get_text(" ", strip=True)
 
-    # 価格を探す
     price = None
-    price_el = soup.select_one("#priceblock_ourprice, #priceblock_dealprice, .a-price .a-offscreen, #corePrice_feature_div .a-offscreen")
+    price_el = soup.select_one(
+        "#priceblock_ourprice, #priceblock_dealprice, "
+        ".a-price .a-offscreen, #corePrice_feature_div .a-offscreen, "
+        "#tp_price_block_total_price_ww .a-offscreen"
+    )
     if price_el:
         price = price_el.get_text(strip=True)
 
-    # 在庫判定
+    note_extra = shop_info.get("note_extra", "")
+
     if "在庫あり" in text or "在庫残り" in text:
-        return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "在庫あり", price=price)
+        return StockResult(shop_info["shop"], shop_info["url"], "在庫あり",
+                           price=price, note=note_extra or None)
     elif "現在在庫切れ" in text or "この商品は現在お取り扱いできません" in text:
-        return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "在庫なし", price=price)
+        return StockResult(shop_info["shop"], shop_info["url"], "在庫なし",
+                           price=price, note=note_extra or None)
     elif "カートに入れる" in text:
-        return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "在庫あり（カート可）", price=price)
+        return StockResult(shop_info["shop"], shop_info["url"], "在庫あり（カート可）",
+                           price=price, note=note_extra or None)
     else:
-        return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "確認不可",
-                           price=price, note="在庫表示を検出できず")
+        return StockResult(shop_info["shop"], shop_info["url"], "確認不可",
+                           price=price, note=note_extra + " / 在庫表示を検出できず" if note_extra else "在庫表示を検出できず")
 
 
-def check_amazon_us(shop_info: dict) -> StockResult:
-    """Amazon.com の在庫確認"""
+def check_generic_jp(shop_info: dict, in_stock_patterns: list, out_of_stock_patterns: list,
+                      price_selector: Optional[str] = None) -> StockResult:
+    """汎用的な日本ショップ在庫チェッカー"""
     soup = fetch_page(shop_info["url"])
     if not soup:
-        return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "確認不可",
-                           note="ページ取得失敗 (Bot検出の可能性)")
-
-    text = soup.get_text(" ", strip=True)
-
-    price = None
-    price_el = soup.select_one(".a-price .a-offscreen, #priceblock_ourprice")
-    if price_el:
-        price = price_el.get_text(strip=True)
-
-    if "In Stock" in text or "In stock" in text:
-        return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "在庫あり", price=price)
-    elif "Currently unavailable" in text or "out of stock" in text.lower():
-        return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "在庫なし", price=price)
-    elif "Add to Cart" in text:
-        return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "在庫あり（カート可）", price=price)
-    else:
-        return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "確認不可",
-                           price=price, note="在庫表示を検出できず")
-
-
-def check_generic_page(shop_info: dict, in_stock_patterns: list, out_of_stock_patterns: list,
-                        price_selector: Optional[str] = None) -> StockResult:
-    """汎用的な在庫チェッカー"""
-    soup = fetch_page(shop_info["url"])
-    if not soup:
-        return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "確認不可",
+        return StockResult(shop_info["shop"], shop_info["url"], "確認不可",
                            note="ページ取得失敗")
 
-    text = soup.get_text(" ", strip=True).lower()
+    text = soup.get_text(" ", strip=True)
+    text_lower = text.lower()
 
     price = None
     if price_selector:
@@ -197,127 +141,111 @@ def check_generic_page(shop_info: dict, in_stock_patterns: list, out_of_stock_pa
         if price_el:
             price = price_el.get_text(strip=True)
 
+    # 価格がない場合、テキストから抽出を試みる
+    if not price:
+        price_match = re.search(r'[¥￥][\d,]+', text)
+        if not price_match:
+            price_match = re.search(r'(\d{1,3}(?:,\d{3})+)\s*円', text)
+        if price_match:
+            price = price_match.group(0)
+
     for pattern in out_of_stock_patterns:
-        if pattern.lower() in text:
-            return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "在庫なし", price=price)
+        if pattern.lower() in text_lower:
+            return StockResult(shop_info["shop"], shop_info["url"], "在庫なし", price=price)
 
     for pattern in in_stock_patterns:
-        if pattern.lower() in text:
-            return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "在庫あり", price=price)
+        if pattern.lower() in text_lower:
+            return StockResult(shop_info["shop"], shop_info["url"], "在庫あり", price=price)
 
-    return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "確認不可",
+    return StockResult(shop_info["shop"], shop_info["url"], "確認不可",
                        price=price, note="在庫表示を検出できず")
 
 
 def check_switch_science(shop_info: dict) -> StockResult:
-    return check_generic_page(
+    return check_generic_jp(
         shop_info,
         in_stock_patterns=["カートに入れる", "在庫あり", "add to cart"],
-        out_of_stock_patterns=["sold out", "在庫切れ", "入荷待ち", "notify me"],
+        out_of_stock_patterns=["sold out", "在庫切れ", "入荷待ち", "入荷についてはお問い合わせ"],
         price_selector=".product-price, .price",
     )
 
 
 def check_ksy(shop_info: dict) -> StockResult:
-    return check_generic_page(
+    return check_generic_jp(
         shop_info,
-        in_stock_patterns=["カートに入れる", "add to cart", "在庫あり", "buy now"],
-        out_of_stock_patterns=["sold out", "在庫切れ", "品切れ", "入荷未定"],
+        in_stock_patterns=["カートに入れる", "add to cart", "在庫あり", "buy now", "カートに追加"],
+        out_of_stock_patterns=["sold out", "在庫切れ", "品切れ", "入荷未定", "在庫なし"],
     )
 
 
-def check_raspberrypi_official(shop_info: dict) -> StockResult:
-    return check_generic_page(
+def check_akizuki(shop_info: dict) -> StockResult:
+    return check_generic_jp(
         shop_info,
-        in_stock_patterns=["buy now", "add to cart", "in stock"],
-        out_of_stock_patterns=["out of stock", "notify me", "sold out"],
+        in_stock_patterns=["カートに入れる", "在庫あり", "在庫数"],
+        out_of_stock_patterns=["在庫切れ", "品切れ", "sold out", "入荷未定", "メンテナンス中"],
     )
 
 
-def check_pihut(shop_info: dict) -> StockResult:
-    return check_generic_page(
+def check_marutsu(shop_info: dict) -> StockResult:
+    soup = fetch_page(shop_info["url"])
+    if not soup:
+        return StockResult(shop_info["shop"], shop_info["url"], "確認不可",
+                           note="ページ取得失敗")
+
+    text = soup.get_text(" ", strip=True)
+
+    price = None
+    price_match = re.search(r'[¥￥][\d,]+', text)
+    if not price_match:
+        price_match = re.search(r'(\d{1,3}(?:,\d{3})+)\s*円', text)
+    if price_match:
+        price = price_match.group(0)
+
+    # マルツの在庫数を確認
+    stock_match = re.search(r'在庫数[：:\s]*(\d+)', text)
+    if stock_match:
+        stock_num = int(stock_match.group(1))
+        if stock_num > 0:
+            return StockResult(shop_info["shop"], shop_info["url"], "在庫あり",
+                               price=price, note=f"在庫数: {stock_num}")
+        else:
+            # 納期を探す
+            lead_match = re.search(r'納期[：:\s]*([\d]+\s*週間)', text)
+            lead_time = lead_match.group(1) if lead_match else None
+            return StockResult(shop_info["shop"], shop_info["url"], "在庫なし",
+                               price=price, note=f"納期: {lead_time}" if lead_time else None)
+
+    if "在庫切れ" in text or "品切れ" in text:
+        return StockResult(shop_info["shop"], shop_info["url"], "在庫なし", price=price)
+    elif "カートに入れる" in text:
+        return StockResult(shop_info["shop"], shop_info["url"], "在庫あり", price=price)
+
+    return StockResult(shop_info["shop"], shop_info["url"], "確認不可",
+                       price=price, note="在庫表示を検出できず")
+
+
+def check_sengoku(shop_info: dict) -> StockResult:
+    return check_generic_jp(
         shop_info,
-        in_stock_patterns=["add to cart", "in stock"],
-        out_of_stock_patterns=["sold out", "out of stock", "notify me", "back soon"],
-        price_selector=".product-price, .price",
-    )
-
-
-def check_pimoroni(shop_info: dict) -> StockResult:
-    return check_generic_page(
-        shop_info,
-        in_stock_patterns=["add to cart", "in stock", "ready to ship"],
-        out_of_stock_patterns=["out of stock", "sold out", "back in stock", "notify me"],
-        price_selector=".product-price, .price",
-    )
-
-
-def check_pishop(shop_info: dict) -> StockResult:
-    return check_generic_page(
-        shop_info,
-        in_stock_patterns=["add to cart", "in stock"],
-        out_of_stock_patterns=["out of stock", "sold out", "notify"],
-        price_selector=".price",
-    )
-
-
-def check_adafruit(shop_info: dict) -> StockResult:
-    return check_generic_page(
-        shop_info,
-        in_stock_patterns=["add to cart", "in stock"],
-        out_of_stock_patterns=["out of stock", "sold out", "notify me"],
-        price_selector=".prod-price",
-    )
-
-
-def check_sparkfun(shop_info: dict) -> StockResult:
-    return check_generic_page(
-        shop_info,
-        in_stock_patterns=["add to cart", "in stock"],
-        out_of_stock_patterns=["out of stock", "sold out", "backorder", "notify"],
-        price_selector=".price",
-    )
-
-
-def check_canakit(shop_info: dict) -> StockResult:
-    return check_generic_page(
-        shop_info,
-        in_stock_patterns=["add to cart", "in stock"],
-        out_of_stock_patterns=["out of stock", "sold out", "notify", "unavailable"],
-        price_selector=".price",
-    )
-
-
-def check_electrokit(shop_info: dict) -> StockResult:
-    return check_generic_page(
-        shop_info,
-        in_stock_patterns=["add to cart", "in stock", "buy"],
-        out_of_stock_patterns=["out of stock", "sold out", "notify", "enter your e-mail"],
-        price_selector=".price",
+        in_stock_patterns=["カートに入れる", "在庫あり", "add to cart"],
+        out_of_stock_patterns=["在庫切れ", "品切れ", "sold out", "該当する商品がありません"],
     )
 
 
 CHECKER_MAP = {
     "amazon_jp": check_amazon_jp,
-    "amazon_us": check_amazon_us,
     "switch_science": check_switch_science,
     "ksy": check_ksy,
-    "raspberrypi_official": check_raspberrypi_official,
-    "pihut": check_pihut,
-    "pimoroni": check_pimoroni,
-    "pishop": check_pishop,
-    "adafruit": check_adafruit,
-    "sparkfun": check_sparkfun,
-    "canakit": check_canakit,
-    "electrokit": check_electrokit,
+    "akizuki": check_akizuki,
+    "marutsu": check_marutsu,
+    "sengoku": check_sengoku,
 }
 
 
 def check_shop(shop_info: dict) -> StockResult:
-    """ショップの在庫をチェック"""
     checker = CHECKER_MAP.get(shop_info["checker"])
     if not checker:
-        return StockResult(shop_info["shop"], shop_info["region"], shop_info["url"], "確認不可",
+        return StockResult(shop_info["shop"], shop_info["url"], "確認不可",
                            note="チェッカー未実装")
     return checker(shop_info)
 
@@ -332,56 +260,168 @@ def status_icon(status: str) -> str:
 
 
 def print_results(results: list[StockResult]):
-    """結果を表示"""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     print()
-    print("=" * 80)
-    print("  Raspberry Pi AI HAT+ 2 在庫確認結果")
-    print("=" * 80)
+    print("=" * 78)
+    print("  Raspberry Pi AI HAT+ 2 在庫確認結果（日本国内）")
+    print(f"  確認日時: {now}")
+    print("=" * 78)
     print()
 
-    # 地域ごとにグループ化
-    regions = {}
-    for r in results:
-        regions.setdefault(r.region, []).append(r)
+    # Amazon と国内ショップに分類
+    amazon_results = [r for r in results if "Amazon" in r.shop]
+    domestic_results = [r for r in results if "Amazon" not in r.shop]
 
-    for region, items in regions.items():
-        print(f"  [{region}]")
-        print(f"  {'─' * 74}")
-        for r in items:
-            icon = status_icon(r.status)
-            price_str = f" | {r.price}" if r.price else ""
-            note_str = f" ({r.note})" if r.note else ""
-            print(f"  {icon} {r.shop:<35} {r.status:<15}{price_str}{note_str}")
-            print(f"    {r.url}")
-        print()
+    print("  [Amazon.co.jp]")
+    print(f"  {'─' * 72}")
+    for r in amazon_results:
+        icon = status_icon(r.status)
+        price_str = f" | {r.price}" if r.price else ""
+        note_str = f" ({r.note})" if r.note else ""
+        print(f"  {icon} {r.shop}")
+        print(f"    状態: {r.status}{price_str}{note_str}")
+        print(f"    URL:  {r.url}")
+    print()
+
+    print("  [国内電子部品ショップ]")
+    print(f"  {'─' * 72}")
+    for r in domestic_results:
+        icon = status_icon(r.status)
+        price_str = f" | {r.price}" if r.price else ""
+        note_str = f" ({r.note})" if r.note else ""
+        print(f"  {icon} {r.shop}")
+        print(f"    状態: {r.status}{price_str}{note_str}")
+        print(f"    URL:  {r.url}")
+    print()
 
     # サマリー
     in_stock = [r for r in results if "在庫あり" in r.status]
     out_stock = [r for r in results if "在庫なし" in r.status]
     unknown = [r for r in results if "確認不可" in r.status]
 
-    print("─" * 80)
+    print("─" * 78)
     print(f"  ● 在庫あり: {len(in_stock)}  |  ✕ 在庫なし: {len(out_stock)}  |  ? 確認不可: {len(unknown)}")
-    print("─" * 80)
+    print("─" * 78)
 
     if in_stock:
         print()
         print("  >>> 購入可能なショップ:")
         for r in in_stock:
-            print(f"      {r.shop} - {r.url}")
+            price_str = f" ({r.price})" if r.price else ""
+            print(f"      {r.shop}{price_str}")
+            print(f"        {r.url}")
 
     print()
-    print("  ※ Amazonなどの大手サイトはBot検出により正確に取得できない場合があります。")
-    print("  ※ AI HAT+ 2 はまだAmazonに未掲載の可能性があります（旧モデルのみ表示）。")
+    print("  ※ Amazon等はBot検出により正確に取得できない場合があります。")
     print("  ※ 最新の在庫状況は各サイトで直接ご確認ください。")
     print()
 
 
+def clean_price(price: Optional[str]) -> Optional[str]:
+    """価格文字列をクリーンアップ"""
+    if not price:
+        return None
+    # パイプ文字を除去（Markdownテーブル対策）
+    price = price.replace("|", "")
+    # 最初の価格だけ取り出す
+    match = re.search(r'[¥￥$][\d,]+(?:\.\d+)?|[\d,]+円', price)
+    if match:
+        return match.group(0)
+    return price.strip()
+
+
+def export_markdown(results: list[StockResult], filepath: str = "inventory_result.md"):
+    """結果をMarkdownファイルに出力"""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    amazon_results = [r for r in results if "Amazon" in r.shop]
+    domestic_results = [r for r in results if "Amazon" not in r.shop]
+    in_stock = [r for r in results if "在庫あり" in r.status]
+    out_stock = [r for r in results if "在庫なし" in r.status]
+    unknown = [r for r in results if "確認不可" in r.status]
+
+    lines = [
+        f"# Raspberry Pi AI HAT+ 2 在庫確認結果",
+        f"",
+        f"**確認日時:** {now}",
+        f"",
+        f"**製品情報:** Hailo-10H AIアクセラレータ / 40 TOPS (INT4) / 8GB RAM / $130",
+        f"",
+        f"---",
+        f"",
+        f"## サマリー",
+        f"",
+        f"| 状態 | 件数 |",
+        f"|------|------|",
+        f"| 在庫あり | **{len(in_stock)}** |",
+        f"| 在庫なし | {len(out_stock)} |",
+        f"| 確認不可 | {len(unknown)} |",
+        f"",
+        f"---",
+        f"",
+        f"## Amazon.co.jp",
+        f"",
+        f"| ショップ | 状態 | 価格 | 備考 |",
+        f"|----------|------|------|------|",
+    ]
+
+    for r in amazon_results:
+        icon = status_icon(r.status)
+        price = clean_price(r.price) or "-"
+        note = (r.note or "").replace("|", "/")
+        lines.append(f"| {icon} [{r.shop}]({r.url}) | {r.status} | {price} | {note} |")
+
+    lines += [
+        f"",
+        f"## 国内電子部品ショップ",
+        f"",
+        f"| ショップ | 状態 | 価格 | 備考 |",
+        f"|----------|------|------|------|",
+    ]
+
+    for r in domestic_results:
+        icon = status_icon(r.status)
+        price = clean_price(r.price) or "-"
+        note = (r.note or "").replace("|", "/")
+        lines.append(f"| {icon} [{r.shop}]({r.url}) | {r.status} | {price} | {note} |")
+
+    if in_stock:
+        lines += [
+            f"",
+            f"---",
+            f"",
+            f"## 購入可能なショップ",
+            f"",
+        ]
+        for r in in_stock:
+            price_str = f" - {r.price}" if r.price else ""
+            lines.append(f"- **[{r.shop}]({r.url})**{price_str}")
+
+    lines += [
+        f"",
+        f"---",
+        f"",
+        f"> **注意事項**",
+        f"> - Amazon等の大手サイトはBot検出により正確に取得できない場合があります",
+        f"> - 最新の在庫状況は各サイトで直接ご確認ください",
+        f"",
+    ]
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    print(f"  >> 結果を {filepath} に出力しました")
+
+
 def main():
     print()
-    print("  Raspberry Pi AI HAT+ 2 在庫チェッカー")
-    print("  Hailo-10H / 40 TOPS / 8GB RAM / $130")
-    print("  ─────────────────────────────────────")
+    print("  ┌──────────────────────────────────────────────┐")
+    print("  │  Raspberry Pi AI HAT+ 2 在庫チェッカー       │")
+    print("  │  Hailo-10H / 40 TOPS / 8GB RAM / $130        │")
+    print("  │  日本国内ショップ特化版                       │")
+    print("  └──────────────────────────────────────────────┘")
+    print()
     print(f"  {len(SHOPS)} ショップの在庫を確認中...")
     print()
 
@@ -397,7 +437,7 @@ def main():
                 results.append(result)
             except Exception as e:
                 print(f"    ? {shop['shop']}: エラー ({e})")
-                results.append(StockResult(shop["shop"], shop["region"], shop["url"], "確認不可",
+                results.append(StockResult(shop["shop"], shop["url"], "確認不可",
                                            note=str(e)))
 
     # 元の順序でソート
@@ -405,6 +445,7 @@ def main():
     results.sort(key=lambda r: shop_order.get(r.shop, 999))
 
     print_results(results)
+    export_markdown(results)
 
 
 if __name__ == "__main__":
