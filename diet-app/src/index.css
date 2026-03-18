@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-50;
+    font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  .progress-bar {
+    @apply h-3 rounded-full transition-all duration-500 ease-out;
+  }
+}
