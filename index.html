@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>パソコン工房 日本橋店 ナビ</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Hiragino Sans', 'Yu Gothic', sans-serif; background: #0a0a1a; color: #fff; }
+#map { width: 100%; height: 60vh; }
+.info-panel {
+  padding: 20px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+}
+.destination {
+  font-size: 1.4em;
+  font-weight: bold;
+  margin-bottom: 12px;
+  color: #00d4ff;
+}
+.destination small { font-size: 0.6em; color: #888; display: block; margin-top: 4px; }
+.stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.stat-card {
+  flex: 1;
+  min-width: 120px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.stat-card .label { font-size: 0.75em; color: #888; margin-bottom: 4px; }
+.stat-card .value { font-size: 1.6em; font-weight: bold; color: #00d4ff; }
+.stat-card .unit { font-size: 0.7em; color: #aaa; }
+.status {
+  padding: 12px 16px;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 0.9em;
+}
+.status.locating { background: rgba(255,193,7,0.15); color: #ffc107; }
+.status.navigating { background: rgba(0,212,255,0.15); color: #00d4ff; }
+.status.arrived { background: rgba(76,175,80,0.15); color: #4caf50; }
+.status.error { background: rgba(244,67,54,0.15); color: #f44336; }
+.compass {
+  font-size: 2em;
+  text-align: center;
+  margin: 8px 0;
+}
+.btn-navigate {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  margin-top: 12px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #00d4ff, #0066ff);
+  color: #fff;
+  font-size: 1.1em;
+  font-weight: bold;
+  cursor: pointer;
+}
+.btn-navigate:hover { opacity: 0.9; }
+.btn-navigate:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="info-panel">
+  <div class="destination">
+    🖥️ パソコン工房 日本橋店
+    <small>〒556-0005 大阪府大阪市浪速区日本橋4丁目12-2</small>
+  </div>
+  <div class="stats">
+    <div class="stat-card">
+      <div class="label">距離</div>
+      <div class="value" id="distance">--</div>
+      <div class="unit" id="dist-unit">km</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">徒歩</div>
+      <div class="value" id="walk-time">--</div>
+      <div class="unit">分</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">方角</div>
+      <div class="compass" id="direction">🧭</div>
+    </div>
+  </div>
+  <div class="status locating" id="status">📡 現在地を取得中...</div>
+  <button class="btn-navigate" id="btn-gmaps" disabled onclick="openGoogleMaps()">
+    Google Maps で経路案内を開く
+  </button>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const DEST = { lat: 34.65942, lng: 135.50547, name: 'パソコン工房 日本橋店' };
+let map, userMarker, destMarker, routeLine, userPos = null;
+
+// Map setup
+map = L.map('map').setView([DEST.lat, DEST.lng], 15);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const destIcon = L.divIcon({
+  html: '<div style="font-size:2em;text-align:center;">🖥️</div>',
+  iconSize: [36, 36], iconAnchor: [18, 18], className: ''
+});
+const userIcon = L.divIcon({
+  html: '<div style="width:16px;height:16px;background:#00d4ff;border-radius:50%;border:3px solid #fff;box-shadow:0 0 8px #00d4ff;"></div>',
+  iconSize: [16, 16], iconAnchor: [8, 8], className: ''
+});
+
+destMarker = L.marker([DEST.lat, DEST.lng], { icon: destIcon })
+  .addTo(map)
+  .bindPopup(`<b>${DEST.name}</b><br>大阪市浪速区日本橋4-12-2`);
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function bearing(lat1, lon1, lat2, lon2) {
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+  const x = Math.cos(lat1*Math.PI/180)*Math.sin(lat2*Math.PI/180) - Math.sin(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.cos(dLon);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+}
+
+function directionArrow(deg) {
+  const arrows = ['⬆️', '↗️', '➡️', '↘️', '⬇️', '↙️', '⬅️', '↖️'];
+  return arrows[Math.round(deg / 45) % 8];
+}
+
+function updateUI(pos) {
+  userPos = pos;
+  const lat = pos.coords.latitude;
+  const lng = pos.coords.longitude;
+  const dist = haversine(lat, lng, DEST.lat, DEST.lng);
+  const bear = bearing(lat, lng, DEST.lat, DEST.lng);
+  const walkMin = Math.round(dist / 0.08); // ~4.8 km/h
+
+  // Update map
+  if (userMarker) {
+    userMarker.setLatLng([lat, lng]);
+  } else {
+    userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(map);
+  }
+  if (routeLine) map.removeLayer(routeLine);
+  routeLine = L.polyline([[lat, lng], [DEST.lat, DEST.lng]], {
+    color: '#00d4ff', weight: 3, dashArray: '8,12', opacity: 0.7
+  }).addTo(map);
+  map.fitBounds([[lat, lng], [DEST.lat, DEST.lng]], { padding: [40, 40] });
+
+  // Update stats
+  if (dist < 1) {
+    document.getElementById('distance').textContent = Math.round(dist * 1000);
+    document.getElementById('dist-unit').textContent = 'm';
+  } else {
+    document.getElementById('distance').textContent = dist.toFixed(1);
+    document.getElementById('dist-unit').textContent = 'km';
+  }
+  document.getElementById('walk-time').textContent = walkMin;
+  document.getElementById('direction').textContent = directionArrow(bear);
+
+  // Status
+  const statusEl = document.getElementById('status');
+  if (dist < 0.05) {
+    statusEl.className = 'status arrived';
+    statusEl.textContent = '🎉 到着しました！パソコン工房 日本橋店はすぐそこです！';
+  } else {
+    statusEl.className = 'status navigating';
+    statusEl.textContent = `🚶 ナビゲーション中 — ${directionArrow(bear)} 方向に進んでください`;
+  }
+
+  document.getElementById('btn-gmaps').disabled = false;
+}
+
+function onError(err) {
+  const statusEl = document.getElementById('status');
+  statusEl.className = 'status error';
+  if (err.code === 1) {
+    statusEl.textContent = '⚠️ 位置情報の使用が許可されていません。ブラウザの設定を確認してください。';
+  } else {
+    statusEl.textContent = '⚠️ 位置情報を取得できませんでした: ' + err.message;
+  }
+  document.getElementById('btn-gmaps').disabled = false;
+}
+
+function openGoogleMaps() {
+  const dest = `${DEST.lat},${DEST.lng}`;
+  let url;
+  if (userPos) {
+    url = `https://www.google.com/maps/dir/${userPos.coords.latitude},${userPos.coords.longitude}/${dest}/@${dest},16z/data=!4m2!4m1!3e2`;
+  } else {
+    url = `https://www.google.com/maps/dir//${dest}/@${dest},16z/data=!4m2!4m1!3e2`;
+  }
+  window.open(url, '_blank');
+}
+
+// Start watching position
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition(updateUI, onError, {
+    enableHighAccuracy: true,
+    maximumAge: 5000,
+    timeout: 15000
+  });
+} else {
+  document.getElementById('status').textContent = '⚠️ このブラウザは位置情報に対応していません';
+  document.getElementById('status').className = 'status error';
+}
+</script>
+</body>
+</html>
