@@ -277,8 +277,15 @@
 
   fetchRate();
 
+  // 以前登録していたService Workerが古いキャッシュを返し続ける問題があったため、
+  // 新規登録は行わず、既存の登録があれば掃除する(sw.js側でも自己解除する)。
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      regs.forEach((reg) => reg.unregister());
+    });
+    if (window.caches) {
+      caches.keys().then((keys) => keys.forEach((key) => caches.delete(key)));
+    }
   }
 </script>
 </body>
