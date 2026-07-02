@@ -11,3 +11,7 @@ Mac不要・Apple ID不要・スマホだけで動かせる、ドル円レート
 4. ホーム画面にアイコンが追加され、以後はアプリのようにタップで起動可能
 
 ネイティブのiOSアプリ(`ios/USDJPYRate/`)と見た目・機能はほぼ同じです。App Store経由でのインストールではないため審査や証明書は不要です。
+
+## 公開先
+
+GitHub Pagesで公開されています: https://survivaloo.github.io/test/
