@@ -22,7 +22,7 @@ final class ExchangeRateViewModel: ObservableObject {
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var errorMessage: String?
 
-    private let endpoint = URL(string: "https://api.frankfurter.app/latest?from=USD&to=JPY")!
+    private let endpoint = URL(string: "https://api.frankfurter.dev/v1/latest?from=USD&to=JPY")!
     private let session: URLSession
 
     init(session: URLSession = .shared) {
