@@ -1,0 +1,49 @@
+name: iOS Build (Simulator)
+
+on:
+  push:
+    branches: [main, "cursor/**"]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-build.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build-simulator:
+    name: Build for iOS Simulator
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios/USDJPYRate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer || true
+
+      - name: Show available simulators
+        run: xcrun simctl list devicetypes | head -20
+
+      - name: Build (no code signing, iOS Simulator)
+        run: |
+          xcodebuild \
+            -project USDJPYRate.xcodeproj \
+            -scheme USDJPYRate \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Zip the .app bundle
+        run: |
+          cd build/Build/Products/Debug-iphonesimulator
+          zip -r USDJPYRate-simulator.zip USDJPYRate.app
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: USDJPYRate-simulator-build
+          path: ios/USDJPYRate/build/Build/Products/Debug-iphonesimulator/USDJPYRate-simulator.zip
+          retention-days: 30
