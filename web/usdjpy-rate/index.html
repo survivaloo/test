@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>ドル円レート</title>
+<meta name="description" content="USD/JPY の為替レートを表示するテスト用アプリ" />
+
+<!-- iOSでホーム画面に追加した際にアプリらしく動作させるための設定 -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="ドル円レート" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0b2d4e" />
+
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+<link rel="manifest" href="manifest.webmanifest" />
+
+<style>
+  :root {
+    color-scheme: dark;
+    --bg-top: #0b2d4e;
+    --bg-bottom: #0a842c;
+    --card-bg: rgba(255, 255, 255, 0.08);
+    --card-border: rgba(255, 255, 255, 0.14);
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.7);
+    --accent: #34c759;
+    --danger: #ff6b6b;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overscroll-behavior: none;
+  }
+
+  body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+    color: var(--text-primary);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    user-select: none;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    padding: 24px;
+    gap: 20px;
+  }
+
+  h1.page-title {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-secondary);
+    margin: 8px 0 0 0;
+    text-transform: uppercase;
+  }
+
+  .card {
+    width: 100%;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 24px;
+    padding: 32px 24px;
+    text-align: center;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  }
+
+  .pair-label {
+    font-size: 18px;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    letter-spacing: 0.05em;
+  }
+
+  .rate-value {
+    font-size: 56px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    transition: opacity 0.2s ease;
+  }
+
+  .rate-sub {
+    margin-top: 8px;
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    margin: 12px auto;
+    border-radius: 50%;
+    border: 4px solid rgba(255, 255, 255, 0.25);
+    border-top-color: #ffffff;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .error-text {
+    color: var(--danger);
+    font-size: 14px;
+    text-align: center;
+    padding: 0 8px;
+  }
+
+  .updated-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  button.refresh-btn {
+    width: 100%;
+    max-width: 480px;
+    padding: 16px;
+    font-size: 17px;
+    font-weight: 600;
+    color: #ffffff;
+    background: var(--accent);
+    border: none;
+    border-radius: 16px;
+    margin: 0 24px 24px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: transform 0.1s ease, opacity 0.2s ease;
+  }
+
+  button.refresh-btn:active {
+    transform: scale(0.97);
+  }
+
+  button.refresh-btn:disabled {
+    opacity: 0.6;
+  }
+
+  .refresh-icon {
+    width: 18px;
+    height: 18px;
+    transition: transform 0.5s ease;
+  }
+
+  .refresh-icon.spinning {
+    animation: spin 0.8s linear infinite;
+  }
+
+  .install-hint {
+    width: 100%;
+    max-width: 480px;
+    margin: 0 24px 12px 24px;
+    padding: 12px 16px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    text-align: center;
+  }
+
+  .install-hint.hidden { display: none; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="page-title">USD / JPY</h1>
+
+    <div class="card">
+      <div class="pair-label">1 米ドル あたり</div>
+      <div id="rateValue" class="rate-value">--</div>
+      <div id="spinner" class="spinner" style="display:none;"></div>
+      <div id="updatedText" class="rate-sub"></div>
+    </div>
+
+    <div id="errorText" class="error-text" style="display:none;"></div>
+  </div>
+
+  <div id="installHint" class="install-hint hidden">
+    このページをホーム画面に追加すると、アプリのように使えます。<br />
+    Safari下部の「共有」ボタン → 「ホーム画面に追加」をタップしてください。
+  </div>
+
+  <button id="refreshBtn" class="refresh-btn">
+    <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="23 4 23 10 17 10"></polyline>
+      <polyline points="1 20 1 14 7 14"></polyline>
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+    </svg>
+    <span id="refreshLabel">更新する</span>
+  </button>
+
+<script>
+  const API_URL = "https://api.frankfurter.app/latest?from=USD&to=JPY";
+
+  const rateValueEl = document.getElementById("rateValue");
+  const updatedTextEl = document.getElementById("updatedText");
+  const errorTextEl = document.getElementById("errorText");
+  const spinnerEl = document.getElementById("spinner");
+  const refreshBtn = document.getElementById("refreshBtn");
+  const refreshIcon = refreshBtn.querySelector(".refresh-icon");
+  const installHint = document.getElementById("installHint");
+
+  function isStandalone() {
+    return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  }
+
+  if (!isStandalone()) {
+    installHint.classList.remove("hidden");
+  }
+
+  function setLoading(isLoading) {
+    refreshBtn.disabled = isLoading;
+    refreshIcon.classList.toggle("spinning", isLoading);
+    if (isLoading) {
+      spinnerEl.style.display = "block";
+      rateValueEl.style.opacity = "0.4";
+    } else {
+      spinnerEl.style.display = "none";
+      rateValueEl.style.opacity = "1";
+    }
+  }
+
+  async function fetchRate() {
+    setLoading(true);
+    errorTextEl.style.display = "none";
+
+    try {
+      const res = await fetch(API_URL, { cache: "no-store" });
+      if (!res.ok) throw new Error("サーバーからの応答が正しくありません。");
+      const data = await res.json();
+      const rate = data.rates && data.rates.JPY;
+      if (typeof rate !== "number") throw new Error("レート情報が見つかりませんでした。");
+
+      rateValueEl.textContent = "¥" + rate.toFixed(2);
+      updatedTextEl.textContent = "最終更新日: " + data.date;
+    } catch (err) {
+      errorTextEl.textContent = "取得に失敗しました: " + err.message;
+      errorTextEl.style.display = "block";
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  refreshBtn.addEventListener("click", fetchRate);
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") fetchRate();
+  });
+
+  fetchRate();
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+</script>
+</body>
+</html>
