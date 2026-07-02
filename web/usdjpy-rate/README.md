@@ -1,7 +1,15 @@
-# ドル円レート (Web版 / PWA)
+# マーケット指標 (Web版 / PWA)
 
-Mac不要・Apple ID不要・スマホだけで動かせる、ドル円レート表示アプリのWeb版です。
-[Frankfurter API](https://www.frankfurter.app/)からレートを取得して表示します。
+Mac不要・Apple ID不要・スマホだけで動かせる、経済指標表示アプリのWeb版です。
+
+- **USD/JPY**: [Frankfurter API](https://www.frankfurter.app/)からリアルタイム取得
+- **日本国債30年金利**: 財務省公表データ(`market-data.json`経由、日次更新)
+- **米国失業率**: 米国労働統計局(BLS)公表データ(`market-data.json`経由、月次更新)
+
+`market-data.json` は `scripts/fetch_market_data.py` を GitHub Actions
+(`.github/workflows/update-market-data.yml`) で毎日自動実行して更新しています。
+財務省・BLSのAPIはブラウザから直接叩くとCORSでブロックされるため、
+ビルド時に取得したJSONを同一オリジンの静的ファイルとして配信する方式にしています。
 
 ## 使い方(iPhoneのみでOK)
 

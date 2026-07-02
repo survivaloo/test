@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-<title>ドル円レート</title>
-<meta name="description" content="USD/JPY の為替レートを表示するテスト用アプリ" />
+<title>マーケット指標</title>
+<meta name="description" content="ドル円レート・日本国債30年金利・米国失業率を表示するテスト用アプリ" />
 
 <!-- iOSでホーム画面に追加した際にアプリらしく動作させるための設定 -->
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="ドル円レート" />
+<meta name="apple-mobile-web-app-title" content="マーケット指標" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="theme-color" content="#0b2d4e" />
 
@@ -35,19 +35,16 @@
   html, body {
     margin: 0;
     padding: 0;
-    height: 100%;
-    overscroll-behavior: none;
+    min-height: 100%;
   }
 
   body {
-    min-height: 100vh;
-    min-height: 100dvh;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: space-between;
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
     background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+    background-attachment: fixed;
     color: var(--text-primary);
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     user-select: none;
@@ -58,60 +55,74 @@
     max-width: 480px;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    flex: 1;
+    align-items: stretch;
     padding: 24px;
-    gap: 20px;
+    gap: 16px;
   }
 
   h1.page-title {
-    font-size: 17px;
-    font-weight: 600;
+    font-size: 20px;
+    font-weight: 700;
     letter-spacing: 0.02em;
-    color: var(--text-secondary);
-    margin: 8px 0 0 0;
-    text-transform: uppercase;
+    color: var(--text-primary);
+    margin: 8px 0 4px 0;
+    text-align: center;
   }
 
   .card {
     width: 100%;
     background: var(--card-bg);
     border: 1px solid var(--card-border);
-    border-radius: 24px;
-    padding: 32px 24px;
+    border-radius: 22px;
+    padding: 22px 20px;
     text-align: center;
     backdrop-filter: blur(10px);
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
   }
 
-  .pair-label {
-    font-size: 18px;
+  .metric-label {
+    font-size: 14px;
     color: var(--text-secondary);
-    margin-bottom: 12px;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.03em;
+    margin-bottom: 2px;
   }
 
-  .rate-value {
-    font-size: 56px;
+  .metric-sub-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+  }
+
+  .metric-value {
+    font-size: 42px;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.02em;
     transition: opacity 0.2s ease;
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
   }
 
-  .rate-sub {
-    margin-top: 8px;
-    font-size: 14px;
+  .metric-updated {
+    margin-top: 6px;
+    font-size: 12px;
     color: var(--text-secondary);
   }
 
+  .metric-error {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--danger);
+  }
+
   .spinner {
-    width: 40px;
-    height: 40px;
-    margin: 12px auto;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
-    border: 4px solid rgba(255, 255, 255, 0.25);
+    border: 3px solid rgba(255, 255, 255, 0.25);
     border-top-color: #ffffff;
     animation: spin 0.8s linear infinite;
   }
@@ -120,21 +131,18 @@
     to { transform: rotate(360deg); }
   }
 
-  .error-text {
-    color: var(--danger);
-    font-size: 14px;
-    text-align: center;
-    padding: 0 8px;
+  .refresh-icon {
+    width: 18px;
+    height: 18px;
+    transition: transform 0.5s ease;
   }
 
-  .updated-text {
-    font-size: 13px;
-    color: var(--text-secondary);
+  .refresh-icon.spinning {
+    animation: spin 0.8s linear infinite;
   }
 
   button.refresh-btn {
     width: 100%;
-    max-width: 480px;
     padding: 16px;
     font-size: 17px;
     font-weight: 600;
@@ -142,7 +150,6 @@
     background: var(--accent);
     border: none;
     border-radius: 16px;
-    margin: 0 24px 24px 24px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -159,20 +166,8 @@
     opacity: 0.6;
   }
 
-  .refresh-icon {
-    width: 18px;
-    height: 18px;
-    transition: transform 0.5s ease;
-  }
-
-  .refresh-icon.spinning {
-    animation: spin 0.8s linear infinite;
-  }
-
   .install-hint {
     width: 100%;
-    max-width: 480px;
-    margin: 0 24px 12px 24px;
     padding: 12px 16px;
     font-size: 13px;
     line-height: 1.5;
@@ -184,46 +179,84 @@
   }
 
   .install-hint.hidden { display: none; }
+
+  .footer-note {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 4px 0 16px 0;
+  }
 </style>
 </head>
 <body>
   <div class="container">
-    <h1 class="page-title">USD / JPY</h1>
+    <h1 class="page-title">マーケット指標</h1>
 
     <div class="card">
-      <div class="pair-label">1 米ドル あたり</div>
-      <div id="rateValue" class="rate-value">--</div>
-      <div id="spinner" class="spinner" style="display:none;"></div>
-      <div id="updatedText" class="rate-sub"></div>
+      <div class="metric-label">USD / JPY</div>
+      <div class="metric-sub-label">1 米ドル あたり</div>
+      <div id="usdjpyValue" class="metric-value">--</div>
+      <div id="usdjpyUpdated" class="metric-updated"></div>
+      <div id="usdjpyError" class="metric-error" style="display:none;"></div>
     </div>
 
-    <div id="errorText" class="error-text" style="display:none;"></div>
-  </div>
+    <div class="card">
+      <div class="metric-label">日本国債 30年金利</div>
+      <div class="metric-sub-label">最新値</div>
+      <div id="jgbValue" class="metric-value">--</div>
+      <div id="jgbUpdated" class="metric-updated"></div>
+      <div id="jgbError" class="metric-error" style="display:none;"></div>
+    </div>
 
-  <div id="installHint" class="install-hint hidden">
-    このページをホーム画面に追加すると、アプリのように使えます。<br />
-    Safari下部の「共有」ボタン → 「ホーム画面に追加」をタップしてください。
-  </div>
+    <div class="card">
+      <div class="metric-label">米国 失業率</div>
+      <div class="metric-sub-label">雇用統計(BLS)</div>
+      <div id="unrateValue" class="metric-value">--</div>
+      <div id="unrateUpdated" class="metric-updated"></div>
+      <div id="unrateError" class="metric-error" style="display:none;"></div>
+    </div>
 
-  <button id="refreshBtn" class="refresh-btn">
-    <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="23 4 23 10 17 10"></polyline>
-      <polyline points="1 20 1 14 7 14"></polyline>
-      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-    </svg>
-    <span id="refreshLabel">更新する</span>
-  </button>
+    <div id="installHint" class="install-hint hidden">
+      このページをホーム画面に追加すると、アプリのように使えます。<br />
+      Safari下部の「共有」ボタン → 「ホーム画面に追加」をタップしてください。
+    </div>
+
+    <button id="refreshBtn" class="refresh-btn">
+      <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"></polyline>
+        <polyline points="1 20 1 14 7 14"></polyline>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+      </svg>
+      <span id="refreshLabel">更新する</span>
+    </button>
+
+    <div class="footer-note">
+      為替: Frankfurter API(リアルタイム)/ 国債金利: 財務省(日次更新)/ 失業率: 米国労働統計局(月次更新)
+    </div>
+  </div>
 
 <script>
   // api.frankfurter.app はリダイレクト(CORSヘッダーなし)を返すため、
   // Safariのfetchでリダイレクト追従時にブロックされる。リダイレクトされない
   // 新エンドポイントを直接使用する。
-  const API_URL = "https://api.frankfurter.dev/v1/latest?from=USD&to=JPY";
+  const USDJPY_API_URL = "https://api.frankfurter.dev/v1/latest?from=USD&to=JPY";
 
-  const rateValueEl = document.getElementById("rateValue");
-  const updatedTextEl = document.getElementById("updatedText");
-  const errorTextEl = document.getElementById("errorText");
-  const spinnerEl = document.getElementById("spinner");
+  // 財務省の国債金利CSV・BLSの失業率APIはブラウザから直接取得するとCORSで
+  // ブロックされるため、GitHub Actionsで定期取得したJSONを同一オリジンから読む。
+  const MARKET_DATA_URL = "./market-data.json";
+
+  const usdjpyValueEl = document.getElementById("usdjpyValue");
+  const usdjpyUpdatedEl = document.getElementById("usdjpyUpdated");
+  const usdjpyErrorEl = document.getElementById("usdjpyError");
+
+  const jgbValueEl = document.getElementById("jgbValue");
+  const jgbUpdatedEl = document.getElementById("jgbUpdated");
+  const jgbErrorEl = document.getElementById("jgbError");
+
+  const unrateValueEl = document.getElementById("unrateValue");
+  const unrateUpdatedEl = document.getElementById("unrateUpdated");
+  const unrateErrorEl = document.getElementById("unrateError");
+
   const refreshBtn = document.getElementById("refreshBtn");
   const refreshIcon = refreshBtn.querySelector(".refresh-icon");
   const installHint = document.getElementById("installHint");
@@ -236,46 +269,89 @@
     installHint.classList.remove("hidden");
   }
 
-  function setLoading(isLoading) {
-    refreshBtn.disabled = isLoading;
-    refreshIcon.classList.toggle("spinning", isLoading);
-    if (isLoading) {
-      spinnerEl.style.display = "block";
-      rateValueEl.style.opacity = "0.4";
-    } else {
-      spinnerEl.style.display = "none";
-      rateValueEl.style.opacity = "1";
-    }
+  function spinnerHtml() {
+    return '<div class="spinner"></div>';
   }
 
-  async function fetchRate() {
-    setLoading(true);
-    errorTextEl.style.display = "none";
+  function setRefreshing(isRefreshing) {
+    refreshBtn.disabled = isRefreshing;
+    refreshIcon.classList.toggle("spinning", isRefreshing);
+  }
+
+  async function fetchUsdJpy() {
+    usdjpyErrorEl.style.display = "none";
+    usdjpyValueEl.innerHTML = spinnerHtml();
 
     try {
-      const res = await fetch(API_URL, { cache: "no-store" });
+      const res = await fetch(USDJPY_API_URL, { cache: "no-store" });
       if (!res.ok) throw new Error("サーバーからの応答が正しくありません。");
       const data = await res.json();
       const rate = data.rates && data.rates.JPY;
       if (typeof rate !== "number") throw new Error("レート情報が見つかりませんでした。");
 
-      rateValueEl.textContent = "¥" + rate.toFixed(2);
-      updatedTextEl.textContent = "最終更新日: " + data.date;
+      usdjpyValueEl.textContent = "¥" + rate.toFixed(2);
+      usdjpyUpdatedEl.textContent = "最終更新日: " + data.date;
     } catch (err) {
-      errorTextEl.textContent = "取得に失敗しました: " + err.message;
-      errorTextEl.style.display = "block";
-    } finally {
-      setLoading(false);
+      usdjpyValueEl.textContent = "--";
+      usdjpyErrorEl.textContent = "取得に失敗しました: " + err.message;
+      usdjpyErrorEl.style.display = "block";
     }
   }
 
-  refreshBtn.addEventListener("click", fetchRate);
+  async function fetchMarketData() {
+    jgbErrorEl.style.display = "none";
+    unrateErrorEl.style.display = "none";
+    jgbValueEl.innerHTML = spinnerHtml();
+    unrateValueEl.innerHTML = spinnerHtml();
+
+    let data;
+    try {
+      const res = await fetch(MARKET_DATA_URL, { cache: "no-store" });
+      if (!res.ok) throw new Error("データファイルの取得に失敗しました。");
+      data = await res.json();
+    } catch (err) {
+      const message = "取得に失敗しました: " + err.message;
+      jgbValueEl.textContent = "--";
+      jgbErrorEl.textContent = message;
+      jgbErrorEl.style.display = "block";
+      unrateValueEl.textContent = "--";
+      unrateErrorEl.textContent = message;
+      unrateErrorEl.style.display = "block";
+      return;
+    }
+
+    if (data.jgb_30y) {
+      jgbValueEl.textContent = data.jgb_30y.value.toFixed(3) + "%";
+      jgbUpdatedEl.textContent = "基準日: " + (data.jgb_30y.date_label || data.jgb_30y.date);
+    } else {
+      jgbValueEl.textContent = "--";
+      jgbErrorEl.textContent = "国債金利データがありません。";
+      jgbErrorEl.style.display = "block";
+    }
+
+    if (data.us_unemployment) {
+      unrateValueEl.textContent = data.us_unemployment.value.toFixed(1) + "%";
+      unrateUpdatedEl.textContent = "対象月: " + (data.us_unemployment.period_name || data.us_unemployment.period);
+    } else {
+      unrateValueEl.textContent = "--";
+      unrateErrorEl.textContent = "失業率データがありません。";
+      unrateErrorEl.style.display = "block";
+    }
+  }
+
+  async function fetchAll() {
+    setRefreshing(true);
+    await Promise.all([fetchUsdJpy(), fetchMarketData()]);
+    setRefreshing(false);
+  }
+
+  refreshBtn.addEventListener("click", fetchAll);
 
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") fetchRate();
+    if (document.visibilityState === "visible") fetchAll();
   });
 
-  fetchRate();
+  fetchAll();
 
   // 以前登録していたService Workerが古いキャッシュを返し続ける問題があったため、
   // 新規登録は行わず、既存の登録があれば掃除する(sw.js側でも自己解除する)。

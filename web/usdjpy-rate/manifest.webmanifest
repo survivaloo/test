@@ -1,7 +1,7 @@
 {
-  "name": "ドル円レート",
-  "short_name": "ドル円",
-  "description": "USD/JPY の為替レートを表示するテスト用アプリ",
+  "name": "マーケット指標",
+  "short_name": "マーケット",
+  "description": "ドル円レート・日本国債30年金利・米国失業率を表示するテスト用アプリ",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

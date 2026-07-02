@@ -1,0 +1,19 @@
+{
+  "generated_at": "2026-07-02T23:30:36.614877+00:00",
+  "jgb_30y": {
+    "value": 3.883,
+    "date": "2026/7/1",
+    "date_label": "2026年7月1日",
+    "unit": "%",
+    "source": "Ministry of Finance Japan",
+    "source_url": "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/"
+  },
+  "us_unemployment": {
+    "value": 4.2,
+    "period": "2026-06",
+    "period_name": "2026年6月",
+    "unit": "%",
+    "source": "U.S. Bureau of Labor Statistics",
+    "source_url": "https://www.bls.gov/cps/"
+  }
+}
