@@ -356,8 +356,8 @@
     </div>
 
     <div class="card bond-card">
-      <div class="metric-label" style="text-align:center;">米国30年国債(ドル建て)</div>
-      <div class="metric-sub-label" style="text-align:center;">先物(ZB)直近終値</div>
+      <div class="metric-label" style="text-align:center;">日本国債30年(ドル建て)</div>
+      <div class="metric-sub-label" style="text-align:center;">額面1万円あたりの米ドル換算価値</div>
       <div id="bondFuturesValue" class="metric-value" style="justify-content:center;">--</div>
       <div id="bondUpdated" class="metric-updated" style="text-align:center;"></div>
       <div id="bondGrid" class="bond-grid"></div>
@@ -393,7 +393,7 @@
 
     <div class="footer-note">
       為替: Frankfurter API(リアルタイム)/ 国債金利: 財務省(日次更新)/ 失業率: 米国労働統計局(月次更新)<br />
-      米国30年国債: FRED・Yahoo Finance(日次更新)/ AI予測分析: 手動更新スナップショット・投資助言ではありません
+      日本国債30年(ドル建て): 財務省・Frankfurter API(日次更新)/ AI予測分析: 手動更新スナップショット・投資助言ではありません
     </div>
   </div>
 
@@ -513,8 +513,8 @@
       unrateErrorEl.style.display = "block";
     }
 
-    renderBondCard(data.us_30y_bond);
-    renderBondForecast(data.us_30y_bond_forecast);
+    renderBondCard(data.jgb_30y_bond_usd);
+    renderBondForecast(data.jgb_30y_bond_usd_forecast);
   }
 
   function renderBondCard(bond) {
@@ -528,23 +528,23 @@
       return;
     }
 
-    bondFuturesValueEl.textContent = typeof bond.zb_futures_price === "number"
-      ? "$" + bond.zb_futures_price.toFixed(2)
+    bondFuturesValueEl.textContent = typeof bond.usd_value_per_10k_face === "number"
+      ? "$" + bond.usd_value_per_10k_face.toFixed(4)
       : "--";
-    bondUpdatedEl.textContent = "先物基準日: " + (bond.zb_futures_date || "--")
-      + " / 利回り基準日: " + (bond.yield_date || "--");
+    bondUpdatedEl.textContent = "USD/JPY基準日: " + (bond.usd_jpy_date || "--")
+      + " / 利回り基準日: " + (bond.jgb_yield_date || "--");
 
     const items = [
-      ["利回り(DGS30)", bond.yield != null ? bond.yield.toFixed(2) + "%" : "--"],
-      ["DCF理論価格", bond.dcf_price != null ? "$" + bond.dcf_price.toFixed(2) : "--"],
+      ["JGB30年利回り", bond.jgb_yield_pct != null ? bond.jgb_yield_pct.toFixed(3) + "%" : "--"],
+      ["USD/JPY", bond.usd_jpy != null ? "¥" + bond.usd_jpy.toFixed(2) : "--"],
+      ["JPY建て理論価格(DCF)", bond.jgb_jpy_price != null ? "¥" + bond.jgb_jpy_price.toFixed(2) : "--"],
       ["修正デュレーション", bond.modified_duration != null ? bond.modified_duration.toFixed(2) + "年" : "--"],
-      ["日次ボラティリティ", bond.daily_vol_bp != null ? bond.daily_vol_bp.toFixed(2) + "bp" : "--"],
     ];
 
     if (bond.statistical_range_90) {
       items.push([
         "統計的90%レンジ(翌営業日)",
-        "$" + bond.statistical_range_90.low.toFixed(2) + " 〜 $" + bond.statistical_range_90.high.toFixed(2),
+        "$" + bond.statistical_range_90.low.toFixed(4) + " 〜 $" + bond.statistical_range_90.high.toFixed(4),
       ]);
     }
 
@@ -572,10 +572,10 @@
       div.className = "forecast-scenario";
       div.innerHTML = `
         <div class="forecast-scenario-title">${sc.label}</div>
-        <div class="forecast-row"><span>ZB先物 期待値</span><strong>$${sc.zb_expected.toFixed(2)}</strong></div>
-        <div class="forecast-row"><span>ZB先物 90%区間</span><strong>$${sc.zb_range_90[0].toFixed(2)} 〜 $${sc.zb_range_90[1].toFixed(2)}</strong></div>
-        <div class="forecast-row"><span>TLT 期待値</span><strong>$${sc.tlt_expected.toFixed(2)}</strong></div>
-        <div class="forecast-row"><span>価格上昇確率</span><strong>${sc.prob_up_pct.toFixed(1)}%</strong></div>
+        <div class="forecast-row"><span>ドル建て価値 期待値</span><strong>$${sc.usd_value_expected.toFixed(4)}</strong></div>
+        <div class="forecast-row"><span>ドル建て価値 90%区間</span><strong>$${sc.usd_value_range_90[0].toFixed(4)} 〜 $${sc.usd_value_range_90[1].toFixed(4)}</strong></div>
+        <div class="forecast-row"><span>想定USD/JPY</span><strong>¥${sc.usd_jpy_expected.toFixed(2)}</strong></div>
+        <div class="forecast-row"><span>価値上昇確率</span><strong>${sc.prob_up_pct.toFixed(1)}%</strong></div>
         <div class="forecast-note">${sc.note || ""}</div>
       `;
       bondForecastScenariosEl.appendChild(div);
@@ -586,34 +586,51 @@
     bondForecastMethodEl.textContent = forecast.method || "";
 
     bondForecastSignalsEl.innerHTML = "";
-    if (forecast.signals && forecast.signals.length) {
-      const title = document.createElement("div");
-      title.style.fontWeight = "700";
-      title.style.color = "#fff";
-      title.style.marginBottom = "4px";
-      title.textContent = "統合したシグナル";
-      bondForecastSignalsEl.appendChild(title);
 
-      forecast.signals.forEach((sig) => {
+    function renderSignalGroup(title, signals, valueKey, stdKey, unit, posterior) {
+      if (!signals || !signals.length) return;
+      const titleEl = document.createElement("div");
+      titleEl.style.fontWeight = "700";
+      titleEl.style.color = "#fff";
+      titleEl.style.margin = "10px 0 4px 0";
+      titleEl.textContent = title;
+      bondForecastSignalsEl.appendChild(titleEl);
+
+      signals.forEach((sig) => {
         const row = document.createElement("div");
         row.className = "signal-row";
+        const v = sig[valueKey];
+        const s = sig[stdKey];
         row.innerHTML = `
           <div class="signal-name">${sig.name}<div class="signal-note">${sig.note || ""}</div></div>
-          <div class="signal-bp">${sig.mean_bp >= 0 ? "+" : ""}${sig.mean_bp.toFixed(2)}bp<br/>±${sig.std_bp.toFixed(2)}bp</div>
+          <div class="signal-bp">${v >= 0 ? "+" : ""}${v.toFixed(3)}${unit}<br/>±${s.toFixed(3)}${unit}</div>
         `;
         bondForecastSignalsEl.appendChild(row);
       });
 
-      if (forecast.posterior) {
+      if (posterior) {
+        const v = posterior[valueKey];
+        const s = posterior[stdKey];
         const row = document.createElement("div");
         row.className = "signal-row";
-        row.style.marginTop = "6px";
+        row.style.marginTop = "4px";
         row.innerHTML = `
-          <div class="signal-name" style="font-weight:700; color:#fff;">→ 事後分布(統合後)<div class="signal-note">${forecast.posterior.note || ""}</div></div>
-          <div class="signal-bp" style="font-weight:700;">${forecast.posterior.mean_bp >= 0 ? "+" : ""}${forecast.posterior.mean_bp.toFixed(3)}bp<br/>±${forecast.posterior.std_bp.toFixed(3)}bp</div>
+          <div class="signal-name" style="font-weight:700; color:#fff;">→ 事後分布(統合後)<div class="signal-note">${posterior.note || ""}</div></div>
+          <div class="signal-bp" style="font-weight:700;">${v >= 0 ? "+" : ""}${v.toFixed(3)}${unit}<br/>±${s.toFixed(3)}${unit}</div>
         `;
         bondForecastSignalsEl.appendChild(row);
       }
+    }
+
+    renderSignalGroup("JGB利回りシグナル(bp)", forecast.signals_jgb_yield, "mean_bp", "std_bp", "bp", forecast.posterior_jgb_yield);
+    renderSignalGroup("USD/JPYシグナル(%)", forecast.signals_fx, "mean_pct", "std_pct", "%", forecast.posterior_fx);
+
+    if (forecast.correlation != null) {
+      const corrNote = document.createElement("div");
+      corrNote.className = "forecast-note";
+      corrNote.style.marginTop = "8px";
+      corrNote.textContent = `JGB利回り変化とUSD/JPY変化の実測相関: ρ = ${forecast.correlation.toFixed(3)}(モンテカルロで両者を相関させて同時にシミュレーション)`;
+      bondForecastSignalsEl.appendChild(corrNote);
     }
 
     bondForecastCaveatsEl.innerHTML = "";

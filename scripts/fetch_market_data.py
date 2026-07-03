@@ -11,72 +11,94 @@ GitHub Actions (.github/workflows/update-market-data.yml) から定期実行さ�
 import csv
 import io
 import json
+import math
 import statistics
 import sys
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 JGB_CSV_URL = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/jgbcme.csv"
+JGB_HISTORICAL_CSV_URL = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/historical/jgbcme_all.csv"
 BLS_API_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/LNS14000000"
-FRED_DGS30_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS30"
-YAHOO_ZB_URL = "https://query1.finance.yahoo.com/v8/finance/chart/ZB=F?range=6mo&interval=1d"
+FRANKFURTER_TIMESERIES_URL = "https://api.frankfurter.dev/v1/{start}..{end}?from=USD&to=JPY"
 OUTPUT_PATH = "web/usdjpy-rate/market-data.json"
 
-# 米国30年国債(現在の指標銘柄, CUSIP 912810UU0)のDCF価格モデル用パラメータ
-BOND_COUPON_RATE = 5.000
-BOND_FACE = 100.0
-BOND_YEARS_TO_MATURITY = 29.87  # 2056/5/15満期
+# 日本国債30年(現在の指標銘柄, 30年利付国債 第90回)のDCF価格モデル用パラメータ
+JGB_BOND_COUPON_RATE = 3.7
+JGB_BOND_MATURITY = date(2056, 3, 20)
 
-# ベイズ統計×モンテカルロ分析のスナップショット(2026/7/1時点、手動更新)
-# 詳細: FRB新議長ウォーシュ氏のタカ派発言(2026/7/1シントラ)、
-#       弱いJGB10年入札、次回米30年債入札(7/9、オファー減額)を
-#       独立/相関シグナルとしてベイズ統合し、t分布(自由度5)で
+# ベイズ統計×モンテカルロ分析のスナップショット(2026/7/1〜7/2時点、手動更新)
+# 「ドル建て30年国債」= 日本国債30年をUSD/JPYで米ドル換算した価値。
+# 詳細: 7/2の低調な10年債入札を受けた長期金利上昇の残存影響、財政・金融政策を
+#       巡る不透明感(様子見姿勢)、FRB新議長ウォーシュ氏のタカ派発言による
+#       ドル高圧力を、JGB利回り変化とUSD/JPY変化それぞれについて独立シグナルと
+#       してベイズ統合し、実測相関(ρ=0.237)を用いた2変量t分布(自由度5)で
 #       20万回のモンテカルロシミュレーションを実施。
 BAYESIAN_FORECAST_SNAPSHOT = {
-    "analysis_date": "2026-07-01",
-    "analysis_date_label": "2026年7月1日",
-    "method": "ベイズ統計(逆分散加重・相関調整)×モンテカルロ(t分布, 20万回試行) + DCF現在価値モデル",
-    "signals": [
-        {"name": "過去実績(ベースライン)", "mean_bp": 0.13, "std_bp": 3.42,
-         "note": "直近60営業日のDGS30日次変化"},
-        {"name": "FRB新議長タカ派発言", "mean_bp": 1.0, "std_bp": 4.0,
-         "note": "7/1シントラでの2%目標堅持発言、9月利上げ観測が浮上"},
-        {"name": "米30年債入札需給", "mean_bp": -0.5, "std_bp": 3.0,
-         "note": "7/9入札はオファー220億ドル(5月の250億ドルより減額、やや支持的)"},
-        {"name": "JGB波及効果", "mean_bp": 0.8, "std_bp": 4.5,
-         "note": "日本10年債入札が低調、JGB30年利回り上昇が波及(FRB発言との相関ρ=0.5で調整)"},
-        {"name": "経済指標サプライズ", "mean_bp": 0.0, "std_bp": 3.42,
-         "note": "7/3は休場のため新規発表なし"},
+    "analysis_date": "2026-07-02",
+    "analysis_date_label": "2026年7月2日",
+    "method": "ベイズ統計(逆分散加重)×モンテカルロ(2変量t分布, 20万回試行) + DCF現在価値モデル",
+    "current": {
+        "jgb_yield_pct": 3.883,
+        "usd_jpy": 161.58,
+        "jgb_jpy_price": 96.8027,
+        "usd_value_per_10k_face": 59.9101,
+    },
+    "signals_jgb_yield": [
+        {"name": "過去実績(ベースライン)", "mean_bp": 0.31, "std_bp": 4.00,
+         "note": "直近60営業日のJGB30年利回り日次変化(実測)"},
+        {"name": "低調な10年債入札の残存影響", "mean_bp": 1.0, "std_bp": 3.5,
+         "note": "財務省が7/2実施した10年債入札が低調、長期債全般で利回り上昇"},
+        {"name": "財政・金融政策の不透明感", "mean_bp": 0.3, "std_bp": 3.0,
+         "note": "先行き不透明感から投資家の様子見姿勢が強まっている"},
     ],
-    "posterior": {"mean_bp": 0.070, "std_bp": 1.673,
-                  "note": "全シグナルをベイズ統合(相関のあるシグナルはGLSで調整済み)"},
+    "signals_fx": [
+        {"name": "過去実績(ベースライン)", "mean_pct": 0.034, "std_pct": 0.377,
+         "note": "直近60営業日のUSD/JPY日次変化(実測)"},
+        {"name": "FRB新議長タカ派発言の残存影響", "mean_pct": 0.15, "std_pct": 0.25,
+         "note": "7/1シントラでの発言でドル高圧力、9月利上げ観測が浮上"},
+        {"name": "急伸後の調整", "mean_pct": -0.10, "std_pct": 0.25,
+         "note": "7/1に162.71まで急伸後、7/2に161.58へ反落した動きを反映"},
+    ],
+    "correlation": 0.237,
+    "posterior_jgb_yield": {"mean_bp": 0.526, "std_bp": 1.979,
+                             "note": "JGB利回りシグナルをベイズ統合(逆分散加重)"},
+    "posterior_fx": {"mean_pct": 0.0266, "std_pct": 0.1601,
+                      "note": "USD/JPYシグナルをベイズ統合(逆分散加重)"},
     "scenarios": [
         {
-            "label": "7月3日(祝日・休場)",
-            "date": "2026-07-03",
-            "zb_expected": 112.53,
-            "zb_range_90": [112.41, 112.64],
-            "tlt_expected": 85.51,
-            "tlt_range_90": [85.42, 85.60],
-            "prob_up_pct": 47.5,
-            "note": "米国債市場休場のためボラティリティを0.25倍に縮小",
+            "label": "7月4日(土・週末で市場閑散)",
+            "date": "2026-07-04",
+            "usd_jpy_expected": 161.59,
+            "usd_jpy_range_90": [161.48, 161.69],
+            "jgb_jpy_price_expected": 96.785,
+            "jgb_jpy_price_range_90": [96.648, 96.921],
+            "usd_value_expected": 59.8957,
+            "usd_value_range_90": [59.7946, 59.9964],
+            "prob_up_pct": 39.3,
+            "note": "土日は現物市場が閉まるため変動をシグナルごと0.2倍に縮小",
         },
         {
             "label": "7月6日(月・次の実質取引日)",
             "date": "2026-07-06",
-            "zb_expected": 112.52,
-            "zb_range_90": [112.07, 112.97],
-            "tlt_expected": 85.50,
-            "tlt_range_90": [85.15, 85.86],
-            "prob_up_pct": 47.7,
-            "note": "祝日明け最初の実質的な取引日",
+            "usd_jpy_expected": 161.62,
+            "usd_jpy_range_90": [161.10, 162.14],
+            "jgb_jpy_price_expected": 96.715,
+            "jgb_jpy_price_range_90": [96.033, 97.395],
+            "usd_value_expected": 59.8404,
+            "usd_value_range_90": [59.3379, 60.3447],
+            "prob_up_pct": 39.4,
+            "note": "週明け最初の実質的な取引日",
         },
     ],
-    "conclusion": "ベイズ統合後も期待値はほぼ横ばいで、上昇確率約48%・下落確率約52%とほぼコイントス。"
-                  "日次の債券価格は効率的市場に近く、既知の情報だけからは方向性を予測するのは困難。",
+    "conclusion": "利回り上昇(価格下落)とドル高(円安、ドル建て価値には逆風)の両シグナルとも"
+                  "小幅ながら同方向(ドル建て価値の下落方向)に偏っており、7/6のドル建て価値の"
+                  "上昇確率は約39%(下落確率約61%)とやや下落寄りの結果になりました。"
+                  "ただし90%区間は現在値を大きく挟んでおり、方向を確信できる水準ではありません。",
     "caveats": [
         "各シグナルの平均・標準偏差は入手可能な定性情報を主観的に定量化したもので、厳密なバックテストは未実施",
-        "シグナル間の相関は一部(FRB発言とJGB波及)のみ調整しており、完全な独立性の仮定は不確実性を過小評価しうる",
+        "JGB利回り変化とFX変化の相関(ρ=0.237)は過去60営業日の実測値だが、シグナルごとの相関構造までは反映していない",
+        "為替(USD/JPY)と金利(JGB利回り)を独立に統合後、相関ρのみで結合しており、完全なモデルではない",
         "投資助言ではなく、教育・分析目的の試験的なモデル出力",
     ],
 }
@@ -169,8 +191,7 @@ def fetch_us_unemployment():
     }
 
 
-def bond_dcf_price(yield_pct: float, coupon_rate: float = BOND_COUPON_RATE,
-                    years: float = BOND_YEARS_TO_MATURITY, face: float = BOND_FACE):
+def bond_dcf_price(yield_pct: float, coupon_rate: float, years: float, face: float = 100.0):
     """半年複利のDCFでクリーン価格・修正デュレーションを計算する。"""
     y = yield_pct / 100.0
     periods = round(years * 2)
@@ -191,78 +212,128 @@ def bond_dcf_price(yield_pct: float, coupon_rate: float = BOND_COUPON_RATE,
     return round(price, 4), round(modified_duration, 2)
 
 
-def fetch_us_30y_yield_history():
-    """FREDからDGS30(米国30年国債利回り)の日次系列を取得する。"""
-    raw = fetch_url(FRED_DGS30_URL).decode("utf-8", errors="replace")
+def fetch_jgb_yield_history():
+    """財務省の履歴CSV(1974〜)からJGB30年利回りの日次系列を取得する。"""
+    raw = fetch_url(JGB_HISTORICAL_CSV_URL).decode("shift_jis", errors="replace")
     reader = csv.reader(io.StringIO(raw))
     rows = list(reader)
-    if not rows or rows[0][0] != "observation_date":
-        raise RuntimeError("FRED DGS30 CSV: unexpected format")
+
+    header_idx = None
+    for i, row in enumerate(rows):
+        if row and row[0].strip() == "Date":
+            header_idx = i
+            break
+    if header_idx is None:
+        raise RuntimeError("JGB historical CSV: header row not found")
+
+    header = [c.strip() for c in rows[header_idx]]
+    col_30y = header.index("30Y")
 
     points = []
-    for row in rows[1:]:
-        if len(row) < 2 or row[1] in ("", "."):
+    for row in rows[header_idx + 1:]:
+        if not row or not row[0].strip() or "/" not in row[0]:
             continue
-        points.append((row[0], float(row[1])))
+        if len(row) <= col_30y:
+            continue
+        value_str = row[col_30y].strip()
+        if not value_str or value_str == "-":
+            continue
+        y, m, d = (int(p) for p in row[0].strip().split("/"))
+        points.append((f"{y:04d}-{m:02d}-{d:02d}", float(value_str)))
 
     if not points:
-        raise RuntimeError("FRED DGS30 CSV: no valid data points")
+        raise RuntimeError("JGB historical CSV: no valid data points")
     return points
 
 
-def fetch_zb_futures_price():
-    """Yahoo FinanceからZB(30年国債先物)の直近終値を取得する。"""
-    raw = fetch_url(YAHOO_ZB_URL)
+def fetch_usdjpy_history(days: int = 130):
+    """Frankfurter APIからUSD/JPYの日次時系列を取得する(過去days日)。"""
+    from datetime import timedelta
+    end = datetime.now(timezone.utc).date()
+    start = end - timedelta(days=days)
+    url = FRANKFURTER_TIMESERIES_URL.format(start=start.isoformat(), end=end.isoformat())
+    raw = fetch_url(url)
     data = json.loads(raw)
-    result = data["chart"]["result"][0]
-    closes = result["indicators"]["quote"][0]["close"]
-    timestamps = result["timestamp"]
-
-    for ts, close in zip(reversed(timestamps), reversed(closes)):
-        if close is not None:
-            date_label = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
-            return float(close), date_label
-    raise RuntimeError("Yahoo Finance ZB: no valid close price")
+    rates = data.get("rates", {})
+    if not rates:
+        raise RuntimeError("Frankfurter timeseries: no data returned")
+    return sorted((d, v["JPY"]) for d, v in rates.items())
 
 
-def fetch_us_30y_bond():
-    yield_points = fetch_us_30y_yield_history()
-    latest_date, latest_yield = yield_points[-1]
+def fetch_jgb_30y_bond_usd(jgb_current: dict):
+    """日本国債30年をUSD/JPYでドル換算した価値と、実測統計に基づく
+    (主観的シグナルを含まない)客観的な翌取引日レンジを算出する。"""
+    yield_history = fetch_jgb_yield_history()
+    fx_history = fetch_usdjpy_history()
 
-    recent = [v for _, v in yield_points[-61:]]
-    daily_changes_bp = [(recent[i] - recent[i - 1]) * 100 for i in range(1, len(recent))]
-    daily_vol_bp = statistics.pstdev(daily_changes_bp) if len(daily_changes_bp) > 1 else 3.4
+    cy, cm, cd = (int(p) for p in jgb_current["date"].split("/"))
+    current_date_iso = f"{cy:04d}-{cm:02d}-{cd:02d}"
 
-    dcf_price, mod_duration = bond_dcf_price(latest_yield)
+    yield_map = dict(yield_history)
+    yield_map[current_date_iso] = jgb_current["value"]
+    fx_map = dict(fx_history)
 
-    try:
-        zb_price, zb_date = fetch_zb_futures_price()
-    except Exception as exc:  # noqa: BLE001
-        print(f"WARNING: failed to fetch ZB futures price: {exc}", file=sys.stderr)
-        zb_price, zb_date = None, None
+    common_dates = sorted(set(yield_map) & set(fx_map))
+    if len(common_dates) < 10:
+        raise RuntimeError("Not enough overlapping JGB/FX history for statistics")
+    recent_dates = common_dates[-61:]
 
-    # 統計モデルのみによる翌取引日の価格レンジ(±1標準偏差, ±1.645標準偏差=90%区間)
-    # 修正デュレーションから 価格変化率 ≒ -修正デュレーション × 利回り変化(%) で近似
-    price_vol_pct = mod_duration * (daily_vol_bp / 100.0) / 100.0 * 100.0  # % change in price per 1 std dev of yield
-    base_price = zb_price if zb_price is not None else dcf_price
-    range_90_low = round(base_price * (1 - 1.645 * price_vol_pct / 100.0), 2)
-    range_90_high = round(base_price * (1 + 1.645 * price_vol_pct / 100.0), 2)
+    yield_vals = [yield_map[d] for d in recent_dates]
+    fx_vals = [fx_map[d] for d in recent_dates]
+
+    yield_chg_bp = [(yield_vals[i] - yield_vals[i - 1]) * 100 for i in range(1, len(yield_vals))]
+    fx_chg_pct = [(fx_vals[i] / fx_vals[i - 1] - 1) * 100 for i in range(1, len(fx_vals))]
+
+    yield_vol_bp = statistics.pstdev(yield_chg_bp)
+    fx_vol_pct = statistics.pstdev(fx_chg_pct)
+
+    n = len(yield_chg_bp)
+    mean_y = statistics.mean(yield_chg_bp)
+    mean_f = statistics.mean(fx_chg_pct)
+    cov = sum((yield_chg_bp[i] - mean_y) * (fx_chg_pct[i] - mean_f) for i in range(n)) / n
+    correlation = cov / (yield_vol_bp * fx_vol_pct) if yield_vol_bp and fx_vol_pct else 0.0
+
+    latest_fx_date, latest_fx = fx_history[-1]
+    current_yield = jgb_current["value"]
+
+    as_of = date.fromisoformat(fx_history[-1][0])
+    years_to_maturity = (JGB_BOND_MATURITY - as_of).days / 365.25
+    jpy_price, mod_duration = bond_dcf_price(current_yield, JGB_BOND_COUPON_RATE, years_to_maturity)
+    usd_value_per_10k_face = round(jpy_price / latest_fx * 100, 4)
+
+    # 統計モデルのみによる翌取引日のドル建て価値レンジ(平均0、実測ボラティリティ・相関を使用)
+    # d ln(USD建て価値) ≈ -修正デュレーション×Δ利回り(bp)/10000 - ΔFX(%)/100 の分散から90%区間を近似
+    c1 = mod_duration / 10000.0
+    c2 = 1.0 / 100.0
+    var_ln = (c1 ** 2) * (yield_vol_bp ** 2) + (c2 ** 2) * (fx_vol_pct ** 2) \
+        + 2 * c1 * c2 * correlation * yield_vol_bp * fx_vol_pct
+    std_ln = math.sqrt(var_ln)
+    range_90_low = round(usd_value_per_10k_face * math.exp(-1.645 * std_ln), 4)
+    range_90_high = round(usd_value_per_10k_face * math.exp(1.645 * std_ln), 4)
 
     return {
-        "yield": latest_yield,
-        "yield_date": latest_date,
-        "daily_vol_bp": round(daily_vol_bp, 2),
-        "dcf_price": dcf_price,
+        "jgb_yield_pct": current_yield,
+        "jgb_yield_date": jgb_current["date"],
+        "usd_jpy": latest_fx,
+        "usd_jpy_date": latest_fx_date,
+        "jgb_jpy_price": jpy_price,
         "modified_duration": mod_duration,
-        "zb_futures_price": zb_price,
-        "zb_futures_date": zb_date,
+        "usd_value_per_10k_face": usd_value_per_10k_face,
+        "jgb_yield_daily_vol_bp": round(yield_vol_bp, 3),
+        "usd_jpy_daily_vol_pct": round(fx_vol_pct, 4),
+        "yield_fx_correlation": round(correlation, 3),
         "statistical_range_90": {
             "low": range_90_low,
             "high": range_90_high,
-            "note": "過去60営業日の利回りボラティリティのみに基づく統計的な変動レンジ(材料の方向感は含まない)",
+            "note": "過去60営業日のJGB利回り・USD/JPYの実測ボラティリティ/相関のみに基づく統計的な変動レンジ(材料の方向感は含まない)",
         },
-        "source": "FRED (DGS30), Yahoo Finance (ZB=F)",
-        "source_url": "https://fred.stlouisfed.org/series/DGS30",
+        "bond_info": {
+            "issue": "30年利付国債(第90回)",
+            "coupon_rate": JGB_BOND_COUPON_RATE,
+            "maturity": JGB_BOND_MATURITY.isoformat(),
+        },
+        "source": "Ministry of Finance Japan (JGB利回り), Frankfurter API (USD/JPY)",
+        "source_url": "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/",
     }
 
 
@@ -281,14 +352,15 @@ def main():
     except Exception as exc:  # noqa: BLE001
         print(f"WARNING: failed to fetch US unemployment data: {exc}", file=sys.stderr)
 
-    try:
-        result["us_30y_bond"] = fetch_us_30y_bond()
-    except Exception as exc:  # noqa: BLE001
-        print(f"WARNING: failed to fetch US 30Y bond data: {exc}", file=sys.stderr)
+    if "jgb_30y" in result:
+        try:
+            result["jgb_30y_bond_usd"] = fetch_jgb_30y_bond_usd(result["jgb_30y"])
+        except Exception as exc:  # noqa: BLE001
+            print(f"WARNING: failed to fetch JGB 30Y USD-denominated bond data: {exc}", file=sys.stderr)
 
-    # ベイズ統計×モンテカルロによる分析(FRB要人発言・入札需給・JGB波及効果など
+    # ベイズ統計×モンテカルロによる分析(入札結果・財政政策を巡る不透明感・FRB発言など
     # 定性情報の解釈が必要なため自動取得はできない。分析セッションごとに手動更新するスナップショット)
-    result["us_30y_bond_forecast"] = BAYESIAN_FORECAST_SNAPSHOT
+    result["jgb_30y_bond_usd_forecast"] = BAYESIAN_FORECAST_SNAPSHOT
 
     if "jgb_30y" not in result and "us_unemployment" not in result:
         print("ERROR: both data sources failed, aborting without writing file", file=sys.stderr)
