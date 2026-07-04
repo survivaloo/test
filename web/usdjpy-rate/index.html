@@ -376,6 +376,61 @@
     color: var(--text-secondary);
     margin-top: 2px;
   }
+
+  .dist-section {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .dist-section:first-of-type {
+    margin-top: 10px;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .dist-badge {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 800;
+    color: #0b2d4e;
+    background: #ffffff;
+    border-radius: 6px;
+    padding: 1px 6px;
+    margin-right: 6px;
+    letter-spacing: 0.02em;
+  }
+
+  .dist-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+
+  svg.dist-svg {
+    width: 100%;
+    height: 130px;
+    display: block;
+  }
+
+  svg.dist-svg-square {
+    width: 100%;
+    height: 230px;
+    display: block;
+  }
+
+  .dist-caption {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+
+  .dist-axis-label {
+    font-size: 9px;
+    fill: rgba(255, 255, 255, 0.55);
+  }
 </style>
 </head>
 <body>
@@ -448,6 +503,29 @@
       </details>
     </div>
 
+    <div id="bondForecastDistCard" class="card bond-card" style="display:none;">
+      <div class="metric-label" style="text-align:center;">確率分布の可視化</div>
+      <div class="metric-sub-label" style="text-align:center;">幾何射影による2D/3D/4D表現(モデル: 自由度5の t分布)</div>
+
+      <div class="dist-section">
+        <div class="dist-title"><span class="dist-badge">2D</span>ドル建て価値の確率密度分布</div>
+        <svg id="pdf2dChart" class="dist-svg" viewBox="0 0 320 130" preserveAspectRatio="none"></svg>
+        <div id="pdf2dCaption" class="dist-caption"></div>
+      </div>
+
+      <div class="dist-section">
+        <div class="dist-title"><span class="dist-badge">3D</span>利回り変化×為替変化の同時確率密度</div>
+        <svg id="joint3dChart" class="dist-svg-square" viewBox="0 0 320 230"></svg>
+        <div id="joint3dCaption" class="dist-caption"></div>
+      </div>
+
+      <div class="dist-section">
+        <div class="dist-title"><span class="dist-badge">4D</span>時間発展する確率分布(色=密度)</div>
+        <svg id="evo4dChart" class="dist-svg-square" viewBox="0 0 320 230"></svg>
+        <div id="evo4dCaption" class="dist-caption"></div>
+      </div>
+    </div>
+
     <div id="installHint" class="install-hint hidden">
       このページをホーム画面に追加すると、アプリのように使えます。<br />
       Safari下部の「共有」ボタン → 「ホーム画面に追加」をタップしてください。
@@ -515,6 +593,14 @@
   const bondForecastMethodEl = document.getElementById("bondForecastMethod");
   const bondForecastSignalsEl = document.getElementById("bondForecastSignals");
   const bondForecastCaveatsEl = document.getElementById("bondForecastCaveats");
+
+  const bondForecastDistCardEl = document.getElementById("bondForecastDistCard");
+  const pdf2dChartEl = document.getElementById("pdf2dChart");
+  const pdf2dCaptionEl = document.getElementById("pdf2dCaption");
+  const joint3dChartEl = document.getElementById("joint3dChart");
+  const joint3dCaptionEl = document.getElementById("joint3dCaption");
+  const evo4dChartEl = document.getElementById("evo4dChart");
+  const evo4dCaptionEl = document.getElementById("evo4dCaption");
 
   const refreshBtn = document.getElementById("refreshBtn");
   const refreshIcon = refreshBtn.querySelector(".refresh-icon");
@@ -603,6 +689,303 @@
       return;
     }
     el.innerHTML = `<span>${labels[0]}</span><span>${labels[labels.length - 1]}</span>`;
+  }
+
+  // ==== 確率分布の可視化(2D/3D/4D)========================================
+  // モデルはJGB利回り変化・USD/JPY変化を自由度5の(ロケーション・スケール)t分布で
+  // 扱っているため、可視化も正規分布ではなくt分布の確率密度関数(PDF)で行う。
+
+  const T_DF = 5;
+  // Γ((ν+1)/2) / (√(νπ)·Γ(ν/2)) の ν=5 での値(1変量t分布のピーク定数)
+  const T_UNIVAR_CONST = 0.379606;
+
+  function tPdf(x, mu, sigma) {
+    const z = (x - mu) / sigma;
+    return (T_UNIVAR_CONST / sigma) * Math.pow(1 + (z * z) / T_DF, -(T_DF + 1) / 2);
+  }
+
+  // 2変量t分布は自由度によらず正規化定数が 1/(2π·σx·σy·√(1-ρ²)) になる
+  // (Γ((ν+2)/2)/Γ(ν/2) = ν/2 であるため)。
+  function bivariateTPdf(x, y, sigmaX, sigmaY, rho) {
+    const zx = x / sigmaX;
+    const zy = y / sigmaY;
+    const omr2 = Math.max(1 - rho * rho, 1e-6);
+    const q = (zx * zx - 2 * rho * zx * zy + zy * zy) / omr2;
+    const norm = 1 / (2 * Math.PI * sigmaX * sigmaY * Math.sqrt(omr2));
+    return norm * Math.pow(1 + q / T_DF, -(T_DF + 2) / 2);
+  }
+
+  // t分布(自由度5)の片側97.5%点。90%区間[low, high]からσを逆算する際に使用。
+  const T5_CRIT_90 = 2.015;
+
+  // 等角(アイソメトリック)投影: データ空間(x, y, z)を2Dスクリーン座標へ幾何学的に射影する。
+  // x軸・y軸を30度ずつ傾けて奥行きを表現し、z(高さ=確率密度)をそのまま縦方向に加算する。
+  function isoProject(x, y, z, cx, cy, scale, zScale) {
+    const angle = Math.PI / 6; // 30度
+    const sx = cx + (x - y) * Math.cos(angle) * scale;
+    const sy = cy + (x + y) * Math.sin(angle) * scale - z * zScale;
+    return [sx, sy];
+  }
+
+  // 密度(0〜1に正規化)を寒色→暖色のヒートカラーへ変換する(4Dチャートの「色」次元用)。
+  function densityToColor(t) {
+    const clamped = Math.max(0, Math.min(1, t));
+    const stops = [
+      [0.0, [59, 130, 246]],   // 青(低密度)
+      [0.5, [52, 199, 89]],    // 緑
+      [0.8, [255, 214, 10]],   // 黄
+      [1.0, [255, 107, 107]],  // 赤(高密度)
+    ];
+    for (let i = 0; i < stops.length - 1; i++) {
+      const [t0, c0] = stops[i];
+      const [t1, c1] = stops[i + 1];
+      if (clamped >= t0 && clamped <= t1) {
+        const f = (clamped - t0) / (t1 - t0 || 1);
+        const r = Math.round(c0[0] + (c1[0] - c0[0]) * f);
+        const g = Math.round(c0[1] + (c1[1] - c0[1]) * f);
+        const b = Math.round(c0[2] + (c1[2] - c0[2]) * f);
+        return `rgb(${r},${g},${b})`;
+      }
+    }
+    return "rgb(255,107,107)";
+  }
+
+  // --- 2D: ドル建て価値の確率密度曲線(自由度5のt分布) ---
+  function renderPdf2D(svgEl, captionEl, forecast) {
+    if (!svgEl) return;
+    const scenarioList = forecast.scenarios || [];
+    const scenario = scenarioList[scenarioList.length - 1];
+    if (!scenario) { svgEl.innerHTML = ""; return; }
+
+    const mean = scenario.usd_value_expected;
+    const [low, high] = scenario.usd_value_range_90;
+    const sigma = (high - low) / (2 * T5_CRIT_90);
+    const current = forecast.current ? (forecast.current.usd_value_iv_adjusted || forecast.current.usd_value_per_10k_face) : null;
+
+    const width = 320, height = 130, padL = 34, padR = 10, padT = 10, padB = 22;
+    const plotW = width - padL - padR, plotH = height - padT - padB;
+
+    const xMin = mean - 4.2 * sigma, xMax = mean + 4.2 * sigma;
+    const N = 100;
+    const pts = [];
+    let maxY = 0;
+    for (let i = 0; i <= N; i++) {
+      const x = xMin + (xMax - xMin) * (i / N);
+      const y = tPdf(x, mean, sigma);
+      pts.push([x, y]);
+      if (y > maxY) maxY = y;
+    }
+
+    const sx = (x) => padL + ((x - xMin) / (xMax - xMin)) * plotW;
+    const sy = (y) => padT + plotH * (1 - y / maxY);
+
+    const linePath = pts.map(([x, y], i) => (i === 0 ? "M" : "L") + sx(x).toFixed(1) + "," + sy(y).toFixed(1)).join(" ");
+    const areaPath = linePath + ` L${sx(xMax).toFixed(1)},${padT + plotH} L${sx(xMin).toFixed(1)},${padT + plotH} Z`;
+
+    // 90%区間の塗りつぶし
+    const ciPts = pts.filter(([x]) => x >= low && x <= high);
+    let ciPath = "";
+    if (ciPts.length > 1) {
+      ciPath = "M" + ciPts.map(([x, y]) => sx(x).toFixed(1) + "," + sy(y).toFixed(1)).join(" L")
+        + ` L${sx(high).toFixed(1)},${(padT + plotH).toFixed(1)} L${sx(low).toFixed(1)},${(padT + plotH).toFixed(1)} Z`;
+    }
+
+    const meanX = sx(mean);
+    const currentX = current != null ? sx(current) : null;
+
+    svgEl.innerHTML = `
+      <path d="${areaPath}" fill="#34c759" opacity="0.08"></path>
+      ${ciPath ? `<path d="${ciPath}" fill="#34c759" opacity="0.22"></path>` : ""}
+      <path d="${linePath}" fill="none" stroke="#34c759" stroke-width="2" stroke-linecap="round"></path>
+      <line x1="${meanX.toFixed(1)}" y1="${padT}" x2="${meanX.toFixed(1)}" y2="${padT + plotH}" stroke="#ffffff" stroke-width="1.2" stroke-dasharray="3,3"></line>
+      ${currentX != null ? `<line x1="${currentX.toFixed(1)}" y1="${padT}" x2="${currentX.toFixed(1)}" y2="${padT + plotH}" stroke="#ffd60a" stroke-width="1.2" stroke-dasharray="1,2"></line>` : ""}
+      <line x1="${padL}" y1="${padT + plotH}" x2="${width - padR}" y2="${padT + plotH}" stroke="rgba(255,255,255,0.3)" stroke-width="1"></line>
+      <text class="dist-axis-label" x="${sx(xMin).toFixed(1)}" y="${height - 6}" text-anchor="start">$${xMin.toFixed(2)}</text>
+      <text class="dist-axis-label" x="${sx(xMax).toFixed(1)}" y="${height - 6}" text-anchor="end">$${xMax.toFixed(2)}</text>
+      <text class="dist-axis-label" x="${meanX.toFixed(1)}" y="${padT + 10}" text-anchor="middle" fill="#ffffff">期待値</text>
+    `;
+
+    if (captionEl) {
+      captionEl.innerHTML = `${scenario.label}のドル建て価値: 期待値 <strong>$${mean.toFixed(4)}</strong>、`
+        + `緑の濃い部分が90%区間 $${low.toFixed(4)} 〜 $${high.toFixed(4)}。`
+        + (currentX != null ? `黄の破線は現在値($${current.toFixed(4)})。` : "")
+        + `x軸=ドル建て価値、y軸=確率密度(自由度5のt分布)。`;
+    }
+  }
+
+  // --- 3D: 利回り変化×為替変化の同時確率密度(等角投影ワイヤーフレーム) ---
+  function renderJoint3D(svgEl, captionEl, forecast) {
+    if (!svgEl) return;
+    const py = forecast.posterior_jgb_yield, pf = forecast.posterior_fx;
+    if (!py || !pf) { svgEl.innerHTML = ""; return; }
+    const rho = forecast.correlation || 0;
+
+    const width = 320, height = 230;
+    const cx = width / 2, cy = height / 2 + 55;
+    const scale = 16, zScale = 55;
+
+    const GRID = 14;
+    const range = 3.2; // ±3.2 標準偏差
+    const rows = [];
+    let maxZ = 0;
+    for (let j = 0; j <= GRID; j++) {
+      const gy = -range + (2 * range) * (j / GRID);
+      const row = [];
+      for (let i = 0; i <= GRID; i++) {
+        const gx = -range + (2 * range) * (i / GRID);
+        const z = bivariateTPdf(gx, gy, 1, 1, rho);
+        if (z > maxZ) maxZ = z;
+        row.push([gx, gy, z]);
+      }
+      rows.push(row);
+    }
+
+    const proj = (gx, gy, z) => isoProject(gx, gy, (z / maxZ) * 2.6, cx, cy, scale, zScale);
+
+    let linesHtml = "";
+    // 奥(y負)から手前(y正)へ描画(ペインターズアルゴリズムで簡易的に奥行きを表現)
+    rows.forEach((row) => {
+      const path = row.map(([gx, gy, z], i) => {
+        const [sx, sy] = proj(gx, gy, z);
+        return (i === 0 ? "M" : "L") + sx.toFixed(1) + "," + sy.toFixed(1);
+      }).join(" ");
+      const peakZ = Math.max(...row.map((p) => p[2])) / maxZ;
+      linesHtml += `<path d="${path}" fill="none" stroke="${densityToColor(peakZ)}" stroke-width="1" opacity="0.55"></path>`;
+    });
+    for (let i = 0; i <= GRID; i++) {
+      const path = rows.map((row) => {
+        const [gx, gy, z] = row[i];
+        const [sx, sy] = proj(gx, gy, z);
+        return [sx, sy];
+      });
+      const d = path.map(([sx, sy], k) => (k === 0 ? "M" : "L") + sx.toFixed(1) + "," + sy.toFixed(1)).join(" ");
+      linesHtml += `<path d="${d}" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="0.6"></path>`;
+    }
+
+    // 軸(利回り軸・為替軸・原点)
+    const axisEnds = [
+      isoProject(-range, 0, 0, cx, cy, scale, zScale),
+      isoProject(range, 0, 0, cx, cy, scale, zScale),
+      isoProject(0, -range, 0, cx, cy, scale, zScale),
+      isoProject(0, range, 0, cx, cy, scale, zScale),
+    ];
+    const origin = isoProject(0, 0, 0, cx, cy, scale, zScale);
+    const peakPoint = isoProject(0, 0, 2.6, cx, cy, scale, zScale);
+
+    svgEl.innerHTML = `
+      <line x1="${axisEnds[0][0].toFixed(1)}" y1="${axisEnds[0][1].toFixed(1)}" x2="${axisEnds[1][0].toFixed(1)}" y2="${axisEnds[1][1].toFixed(1)}" stroke="rgba(255,255,255,0.4)" stroke-width="1"></line>
+      <line x1="${axisEnds[2][0].toFixed(1)}" y1="${axisEnds[2][1].toFixed(1)}" x2="${axisEnds[3][0].toFixed(1)}" y2="${axisEnds[3][1].toFixed(1)}" stroke="rgba(255,255,255,0.4)" stroke-width="1"></line>
+      ${linesHtml}
+      <circle cx="${origin[0].toFixed(1)}" cy="${origin[1].toFixed(1)}" r="2.5" fill="#ffd60a"></circle>
+      <text class="dist-axis-label" x="${axisEnds[1][0].toFixed(1)}" y="${(axisEnds[1][1] + 12).toFixed(1)}" text-anchor="middle">Δ利回り(bp)</text>
+      <text class="dist-axis-label" x="${axisEnds[3][0].toFixed(1)}" y="${(axisEnds[3][1] + 12).toFixed(1)}" text-anchor="middle">ΔUSD/JPY(%)</text>
+      <text class="dist-axis-label" x="${peakPoint[0].toFixed(1)}" y="${(peakPoint[1] - 4).toFixed(1)}" text-anchor="middle" fill="#ffffff">密度ピーク</text>
+    `;
+
+    if (captionEl) {
+      captionEl.innerHTML = `JGB利回り変化(σ=${py.std_bp.toFixed(2)}bp)とUSD/JPY変化(σ=${pf.std_pct.toFixed(3)}%)の`
+        + `同時確率密度を、等角投影(30度)でワイヤーフレーム表示。相関 ρ=${rho.toFixed(3)}により`
+        + `分布の山が斜めに傾いている(色は密度の高さ: 青→緑→黄→赤の順に高い)。`;
+    }
+  }
+
+  // --- 4D: 時間発展する確率分布(x=価値, y(奥行き)=時間, z=密度, 色=密度) ---
+  function renderEvo4D(svgEl, captionEl, forecast) {
+    if (!svgEl) return;
+    const scenarios = forecast.scenarios || [];
+    if (!scenarios.length) { svgEl.innerHTML = ""; return; }
+    const current = forecast.current ? (forecast.current.usd_value_iv_adjusted || forecast.current.usd_value_per_10k_face) : null;
+
+    const width = 320, height = 230;
+    const cx = width / 2, cy = 130;
+    const scale = 24, zScale = 80, heightFactor = 1.5;
+
+    const allVals = scenarios.map((s) => s.usd_value_expected).concat(current != null ? [current] : []);
+    const vMin = Math.min(...scenarios.map((s) => s.usd_value_range_90[0]), ...allVals) - 0.02;
+    const vMax = Math.max(...scenarios.map((s) => s.usd_value_range_90[1]), ...allVals) + 0.02;
+
+    // 時間軸(奥行きy): 0=現在, 1..N=各シナリオ
+    const timeSteps = [{ label: "現在", value: current, sigma: null }].concat(
+      scenarios.map((s) => {
+        const [low, high] = s.usd_value_range_90;
+        return { label: s.label.split("(")[0], value: s.usd_value_expected, sigma: (high - low) / (2 * T5_CRIT_90) };
+      })
+    );
+
+    const xNorm = (v) => ((v - vMin) / (vMax - vMin) - 0.5) * 4.4; // -2.2〜2.2 のデータ空間へ正規化
+    // リッジライン式に各時点(時間断面)ごとに自身の最大密度で正規化する(σが大きく異なる
+    // シナリオ同士でも高さを比較しやすくするため。ジョイプロット/リッジラインプロットの定石)。
+    const curves = timeSteps.map((step, ti) => {
+      if (step.sigma == null) return { ti, isSpike: true, x: xNorm(step.value), label: step.label };
+      const pts = [];
+      const N = 60;
+      let localMax = 0;
+      for (let i = 0; i <= N; i++) {
+        const v = vMin + (vMax - vMin) * (i / N);
+        const z = tPdf(v, step.value, step.sigma);
+        if (z > localMax) localMax = z;
+        pts.push([xNorm(v), z]);
+      }
+      return { ti, isSpike: false, pts, label: step.label, localMax };
+    });
+
+    const projPt = (x, ti, zNorm) => isoProject(x, ti, zNorm * heightFactor, cx, cy, scale, zScale);
+
+    let html = "";
+    // 軸線(時間の奥行き方向)
+    const depthStart = projPt(0, 0, 0);
+    const depthEnd = projPt(0, timeSteps.length - 1, 0);
+    html += `<line x1="${depthStart[0].toFixed(1)}" y1="${depthStart[1].toFixed(1)}" x2="${depthEnd[0].toFixed(1)}" y2="${depthEnd[1].toFixed(1)}" stroke="rgba(255,255,255,0.3)" stroke-width="1"></line>`;
+
+    curves.forEach((c) => {
+      if (c.isSpike) {
+        const [bx, by] = projPt(c.x, c.ti, 0);
+        const [tx, ty] = projPt(c.x, c.ti, 1.15);
+        html += `<line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}" x2="${tx.toFixed(1)}" y2="${ty.toFixed(1)}" stroke="#ffd60a" stroke-width="2"></line>`;
+        html += `<circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="2.5" fill="#ffd60a"></circle>`;
+        html += `<text class="dist-axis-label" x="${bx.toFixed(1)}" y="${(by + 12).toFixed(1)}" text-anchor="middle">${c.label}</text>`;
+        return;
+      }
+      let segHtml = "";
+      for (let i = 0; i < c.pts.length - 1; i++) {
+        const [x0, z0] = c.pts[i];
+        const [x1, z1] = c.pts[i + 1];
+        const [sx0, sy0] = projPt(x0, c.ti, z0 / c.localMax);
+        const [sx1, sy1] = projPt(x1, c.ti, z1 / c.localMax);
+        const color = densityToColor(((z0 + z1) / 2) / c.localMax);
+        segHtml += `<line x1="${sx0.toFixed(1)}" y1="${sy0.toFixed(1)}" x2="${sx1.toFixed(1)}" y2="${sy1.toFixed(1)}" stroke="${color}" stroke-width="2"></line>`;
+      }
+      // 底辺(基準線)
+      const [baseStartX, baseStartY] = projPt(c.pts[0][0], c.ti, 0);
+      const [baseEndX, baseEndY] = projPt(c.pts[c.pts.length - 1][0], c.ti, 0);
+      html += `<line x1="${baseStartX.toFixed(1)}" y1="${baseStartY.toFixed(1)}" x2="${baseEndX.toFixed(1)}" y2="${baseEndY.toFixed(1)}" stroke="rgba(255,255,255,0.25)" stroke-width="0.6"></line>`;
+      html += segHtml;
+      html += `<text class="dist-axis-label" x="${baseStartX.toFixed(1)}" y="${(baseStartY + 12).toFixed(1)}" text-anchor="middle">${c.label}</text>`;
+    });
+
+    svgEl.innerHTML = html;
+
+    if (captionEl) {
+      captionEl.innerHTML = `x軸=ドル建て価値、y軸(奥行き)=時間(現在→各シナリオ)、z軸(高さ)・色=確率密度`
+        + `(リッジラインプロットのように各時点ごとに最大densityで正規化して高さを比較しやすくしている)。`
+        + `時間が進むほど分布の裾が広がる(不確実性が増す)様子を幾何学的に表現。`;
+    }
+  }
+
+  function renderDistributions(forecast) {
+    if (!bondForecastDistCardEl) return;
+    if (!forecast || !forecast.posterior_jgb_yield || !forecast.posterior_fx || !forecast.scenarios || !forecast.scenarios.length) {
+      bondForecastDistCardEl.style.display = "none";
+      return;
+    }
+    bondForecastDistCardEl.style.display = "block";
+    try {
+      renderPdf2D(pdf2dChartEl, pdf2dCaptionEl, forecast);
+      renderJoint3D(joint3dChartEl, joint3dCaptionEl, forecast);
+      renderEvo4D(evo4dChartEl, evo4dCaptionEl, forecast);
+    } catch (err) {
+      bondForecastDistCardEl.style.display = "none";
+    }
   }
 
   function setRefreshing(isRefreshing) {
@@ -789,9 +1172,11 @@
   function renderBondForecast(forecast) {
     if (!forecast) {
       bondForecastCardEl.style.display = "none";
+      if (bondForecastDistCardEl) bondForecastDistCardEl.style.display = "none";
       return;
     }
     bondForecastCardEl.style.display = "block";
+    renderDistributions(forecast);
 
     bondForecastBadgeEl.innerHTML =
       `<span class="analysis-date-badge">分析日: ${forecast.analysis_date_label || forecast.analysis_date}</span>`;
