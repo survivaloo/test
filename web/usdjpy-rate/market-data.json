@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-07-03T00:18:47.245042+00:00",
+  "generated_at": "2026-07-04T00:49:39.838840+00:00",
   "jgb_30y": {
-    "value": 3.883,
-    "date": "2026/7/1",
-    "date_label": "2026年7月1日",
+    "value": 3.937,
+    "date": "2026/7/2",
+    "date_label": "2026年7月2日",
     "unit": "%",
     "source": "Ministry of Finance Japan",
     "source_url": "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/"
@@ -17,19 +17,19 @@
     "source_url": "https://www.bls.gov/cps/"
   },
   "jgb_30y_bond_usd": {
-    "jgb_yield_pct": 3.883,
-    "jgb_yield_date": "2026/7/1",
-    "usd_jpy": 161.58,
-    "usd_jpy_date": "2026-07-02",
-    "jgb_jpy_price": 96.8027,
-    "modified_duration": 17.65,
-    "usd_value_per_10k_face": 59.9101,
-    "jgb_yield_daily_vol_bp": 3.998,
-    "usd_jpy_daily_vol_pct": 0.3766,
-    "yield_fx_correlation": 0.237,
+    "jgb_yield_pct": 3.937,
+    "jgb_yield_date": "2026/7/2",
+    "usd_jpy": 161.15,
+    "usd_jpy_date": "2026-07-03",
+    "jgb_jpy_price": 95.886,
+    "modified_duration": 17.59,
+    "usd_value_per_10k_face": 59.5011,
+    "jgb_yield_daily_vol_bp": 4.073,
+    "usd_jpy_daily_vol_pct": 0.3831,
+    "yield_fx_correlation": 0.192,
     "statistical_range_90": {
-      "low": 59.0538,
-      "high": 60.7788,
+      "low": 58.651,
+      "high": 60.3635,
       "note": "過去60営業日のJGB利回り・USD/JPYの実測ボラティリティ/相関のみに基づく統計的な変動レンジ(材料の方向感は含まない)"
     },
     "bond_info": {
