@@ -21,84 +21,121 @@ JGB_CSV_URL = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate
 JGB_HISTORICAL_CSV_URL = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/historical/jgbcme_all.csv"
 BLS_API_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/LNS14000000"
 FRANKFURTER_TIMESERIES_URL = "https://api.frankfurter.dev/v1/{start}..{end}?from=USD&to=JPY"
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=2y&interval=1d"
 OUTPUT_PATH = "web/usdjpy-rate/market-data.json"
+
+# インプライドボラティリティ(IV)の無料で取得可能な代理指標。
+# JGB・USD/JPY固有のオプションIV(CME CVOL, CBOE JYVIX等)は無料APIが存在しないため、
+# 金利IVの代理として米国債IVを表すMOVE指数、為替IVの代理としてリスクオフ局面で
+# 円の変動と連動しやすいVIX指数(株式IV)を採用する。
+MOVE_TICKER = "%5EMOVE"
+VIX_TICKER = "%5EVIX"
+IV_REGIME_DAMPING = 0.5  # IVレジーム比を実測ボラティリティに反映する際の減衰指数(0=無視, 1=完全反映)
 
 # 日本国債30年(現在の指標銘柄, 30年利付国債 第90回)のDCF価格モデル用パラメータ
 JGB_BOND_COUPON_RATE = 3.7
 JGB_BOND_MATURITY = date(2056, 3, 20)
 
-# ベイズ統計×モンテカルロ分析のスナップショット(2026/7/1〜7/2時点、手動更新)
+# ベイズ統計×モンテカルロ分析のスナップショット(2026/7/4時点、手動更新)
 # 「ドル建て30年国債」= 日本国債30年をUSD/JPYで米ドル換算した価値。
-# 詳細: 7/2の低調な10年債入札を受けた長期金利上昇の残存影響、財政・金融政策を
-#       巡る不透明感(様子見姿勢)、FRB新議長ウォーシュ氏のタカ派発言による
-#       ドル高圧力を、JGB利回り変化とUSD/JPY変化それぞれについて独立シグナルと
-#       してベイズ統合し、実測相関(ρ=0.237)を用いた2変量t分布(自由度5)で
-#       20万回のモンテカルロシミュレーションを実施。
+# 詳細: 7/2の低調な10年債入札を受けた長期金利上昇や財政・金融政策を巡る不透明感、
+#       FRB新議長ウォーシュ氏のタカ派発言(残存影響は経過日数に応じて減衰させて反映)を
+#       JGB利回り変化とUSD/JPY変化それぞれについて独立シグナルとしてベイズ統合。
+#       さらにMOVE指数(米国債IV)・VIX指数(株式IV)から算出したIV(インプライド
+#       ボラティリティ)レジーム比を、事後分布の標準偏差に反映(damping指数0.5)した上で、
+#       実測相関(ρ)を用いた2変量t分布(自由度5)で20万回のモンテカルロシミュレーションを実施。
 BAYESIAN_FORECAST_SNAPSHOT = {
-    "analysis_date": "2026-07-02",
-    "analysis_date_label": "2026年7月2日",
-    "method": "ベイズ統計(逆分散加重)×モンテカルロ(2変量t分布, 20万回試行) + DCF現在価値モデル",
+    "analysis_date": "2026-07-04",
+    "analysis_date_label": "2026年7月4日",
+    "method": "ベイズ統計(逆分散加重)×IVレジーム調整×モンテカルロ(2変量t分布, 20万回試行) + DCF現在価値モデル",
     "current": {
-        "jgb_yield_pct": 3.883,
-        "usd_jpy": 161.58,
-        "jgb_jpy_price": 96.8027,
-        "usd_value_per_10k_face": 59.9101,
+        "jgb_yield_pct": 3.937,
+        "usd_jpy": 161.15,
+        "jgb_jpy_price": 95.886,
+        "usd_value_per_10k_face": 59.5011,
+    },
+    "iv_regime": {
+        "move": {"current": 66.79, "avg_1y": 75.00, "regime_ratio": 0.8905,
+                  "note": "MOVE指数(米国債オプションの30日インプライドボラティリティ)。"
+                          "1年平均比▲11%で、金利市場は直近平均より落ち着いた変動を織り込んでいる"},
+        "vix": {"current": 15.81, "avg_1y": 18.10, "regime_ratio": 0.8735,
+                "note": "VIX指数(株式オプションの30日インプライドボラティリティ)。"
+                        "1年平均比▲13%で、リスクオフ的な急変動への警戒感は低め"},
+        "damping_exponent": 0.5,
+        "note": "JGB・USD/JPY固有のオプションIV(CME CVOL、CBOE JYVIX等)は無料で継続取得できるAPIが"
+                "存在しないため、金利IVの代理としてMOVE指数、為替IVの代理としてVIX指数を採用。"
+                "各事後分布の標準偏差に regime_ratio^0.5 を乗じて反映(完全反映ではなく減衰させて適用)",
     },
     "signals_jgb_yield": [
-        {"name": "過去実績(ベースライン)", "mean_bp": 0.31, "std_bp": 4.00,
+        {"name": "過去実績(ベースライン)", "mean_bp": 0.40, "std_bp": 4.07,
          "note": "直近60営業日のJGB30年利回り日次変化(実測)"},
-        {"name": "低調な10年債入札の残存影響", "mean_bp": 1.0, "std_bp": 3.5,
-         "note": "財務省が7/2実施した10年債入札が低調、長期債全般で利回り上昇"},
+        {"name": "低調な10年債入札の残存影響(2営業日経過し減衰)", "mean_bp": 0.5, "std_bp": 3.5,
+         "note": "財務省が7/2実施した10年債入札が低調、長期債全般で利回り上昇。影響は徐々に減衰と想定"},
         {"name": "財政・金融政策の不透明感", "mean_bp": 0.3, "std_bp": 3.0,
          "note": "先行き不透明感から投資家の様子見姿勢が強まっている"},
     ],
     "signals_fx": [
-        {"name": "過去実績(ベースライン)", "mean_pct": 0.034, "std_pct": 0.377,
+        {"name": "過去実績(ベースライン)", "mean_pct": 0.023, "std_pct": 0.383,
          "note": "直近60営業日のUSD/JPY日次変化(実測)"},
-        {"name": "FRB新議長タカ派発言の残存影響", "mean_pct": 0.15, "std_pct": 0.25,
-         "note": "7/1シントラでの発言でドル高圧力、9月利上げ観測が浮上"},
-        {"name": "急伸後の調整", "mean_pct": -0.10, "std_pct": 0.25,
-         "note": "7/1に162.71まで急伸後、7/2に161.58へ反落した動きを反映"},
+        {"name": "FRB新議長タカ派発言の残存影響(減衰)", "mean_pct": 0.10, "std_pct": 0.25,
+         "note": "7/1シントラでの発言によるドル高圧力は残るが影響は逓減と想定"},
+        {"name": "続落基調の継続", "mean_pct": -0.08, "std_pct": 0.22,
+         "note": "7/1に162.71まで急伸後、7/2は161.58、7/3は161.15と続落した動きを反映"},
     ],
-    "correlation": 0.237,
-    "posterior_jgb_yield": {"mean_bp": 0.526, "std_bp": 1.979,
-                             "note": "JGB利回りシグナルをベイズ統合(逆分散加重)"},
-    "posterior_fx": {"mean_pct": 0.0266, "std_pct": 0.1601,
-                      "note": "USD/JPYシグナルをベイズ統合(逆分散加重)"},
+    "correlation": 0.192,
+    "posterior_jgb_yield": {
+        "mean_bp": 0.388,
+        "std_bp_bayes": 1.988,
+        "std_bp": 1.876,
+        "note": "JGB利回りシグナルをベイズ統合(逆分散加重)した後、MOVE指数のIVレジーム比"
+                "(0.8905^0.5)で標準偏差を調整",
+    },
+    "posterior_fx": {
+        "mean_pct": 0.0024,
+        "std_pct_bayes": 0.1517,
+        "std_pct": 0.1417,
+        "note": "USD/JPYシグナルをベイズ統合(逆分散加重)した後、VIXのIVレジーム比"
+                "(0.8735^0.5)で標準偏差を調整",
+    },
     "scenarios": [
         {
             "label": "7月4日(土・週末で市場閑散)",
             "date": "2026-07-04",
-            "usd_jpy_expected": 161.59,
-            "usd_jpy_range_90": [161.48, 161.69],
-            "jgb_jpy_price_expected": 96.785,
-            "jgb_jpy_price_range_90": [96.648, 96.921],
-            "usd_value_expected": 59.8957,
-            "usd_value_range_90": [59.7946, 59.9964],
-            "prob_up_pct": 39.3,
-            "note": "土日は現物市場が閉まるため変動をシグナルごと0.2倍に縮小",
+            "usd_jpy_expected": 161.15,
+            "usd_jpy_range_90": [161.06, 161.24],
+            "jgb_jpy_price_expected": 95.873,
+            "jgb_jpy_price_range_90": [95.745, 96.001],
+            "usd_value_expected": 59.4927,
+            "usd_value_range_90": [59.4006, 59.5849],
+            "prob_up_pct": 43.1,
+            "note": "土日は現物市場が閉まるため変動をシグナルごと0.2倍に縮小(IV調整後の値を使用)",
         },
         {
             "label": "7月6日(月・次の実質取引日)",
             "date": "2026-07-06",
-            "usd_jpy_expected": 161.62,
-            "usd_jpy_range_90": [161.10, 162.14],
-            "jgb_jpy_price_expected": 96.715,
-            "jgb_jpy_price_range_90": [96.033, 97.395],
-            "usd_value_expected": 59.8404,
-            "usd_value_range_90": [59.3379, 60.3447],
-            "prob_up_pct": 39.4,
-            "note": "週明け最初の実質的な取引日",
+            "usd_jpy_expected": 161.15,
+            "usd_jpy_range_90": [160.69, 161.61],
+            "jgb_jpy_price_expected": 95.821,
+            "jgb_jpy_price_range_90": [95.185, 96.461],
+            "usd_value_expected": 59.4598,
+            "usd_value_range_90": [59.0011, 59.9215],
+            "prob_up_pct": 43.1,
+            "note": "週明け最初の実質的な取引日。IVレジーム(MOVE/VIXとも1年平均を下回る)を反映し、"
+                    "純ヒストリカルボラティリティのみの場合よりレンジはやや狭い",
         },
     ],
-    "conclusion": "利回り上昇(価格下落)とドル高(円安、ドル建て価値には逆風)の両シグナルとも"
-                  "小幅ながら同方向(ドル建て価値の下落方向)に偏っており、7/6のドル建て価値の"
-                  "上昇確率は約39%(下落確率約61%)とやや下落寄りの結果になりました。"
-                  "ただし90%区間は現在値を大きく挟んでおり、方向を確信できる水準ではありません。",
+    "conclusion": "利回り上昇(価格下落)方向のシグナルがやや優勢な一方、ドルは直近続落基調にあり"
+                  "FX面はやや円高(ドル建て価値にはむしろ追い風)方向で、両シグナルの効果は一部相殺されます。"
+                  "7/6のドル建て価値の上昇確率は約43%(下落確率約57%)とやや下落寄りですが、7/2時点の"
+                  "分析(上昇確率約39%)よりも方向感はやや弱まりました。またMOVE・VIXとも1年平均を"
+                  "下回る「落ち着いたIVレジーム」にあるため、90%区間は純ヒストリカルボラティリティ"
+                  "ベースの場合よりもやや狭くなっています。",
     "caveats": [
         "各シグナルの平均・標準偏差は入手可能な定性情報を主観的に定量化したもので、厳密なバックテストは未実施",
-        "JGB利回り変化とFX変化の相関(ρ=0.237)は過去60営業日の実測値だが、シグナルごとの相関構造までは反映していない",
+        "JGB利回り変化とFX変化の相関(ρ=0.192)は過去60営業日の実測値だが、シグナルごとの相関構造までは反映していない",
         "為替(USD/JPY)と金利(JGB利回り)を独立に統合後、相関ρのみで結合しており、完全なモデルではない",
+        "IV(インプライドボラティリティ)はJGB・USD/JPY固有のオプション市場データではなく、"
+        "無料で取得可能なMOVE指数(米国債IV)・VIX指数(株式IV)を代理指標として使用した近似",
         "投資助言ではなく、教育・分析目的の試験的なモデル出力",
     ],
 }
@@ -278,9 +315,69 @@ def fetch_usdjpy_history(days: int = 130):
     return sorted((d, v["JPY"]) for d, v in rates.items())
 
 
-def fetch_jgb_30y_bond_usd(jgb_current: dict):
-    """日本国債30年をUSD/JPYでドル換算した価値と、実測統計に基づく
-    (主観的シグナルを含まない)客観的な翌取引日レンジを算出する。"""
+def fetch_yahoo_series(ticker: str):
+    """Yahoo Financeのチャート用APIから日次終値の時系列(過去2年)を取得する。"""
+    url = YAHOO_CHART_URL.format(ticker=ticker)
+    raw = fetch_url(url)
+    data = json.loads(raw)
+    result = data["chart"]["result"][0]
+    closes = result["indicators"]["quote"][0]["close"]
+    timestamps = result["timestamp"]
+    points = [
+        (datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d"), float(c))
+        for ts, c in zip(timestamps, closes) if c is not None
+    ]
+    if not points:
+        raise RuntimeError(f"Yahoo Finance {ticker}: no valid data points")
+    return points
+
+
+def fetch_implied_vol_regime():
+    """MOVE指数(米国債IV)・VIX指数(株式IV)を取得し、直近1年平均に対する
+    現在値の比率(レジーム比)を算出する。レジーム比>1は「直近1年の平均より
+    IVが高い(警戒感が強い)」ことを意味する。"""
+    result = {}
+
+    try:
+        move_points = fetch_yahoo_series(MOVE_TICKER)
+        move_vals = [v for _, v in move_points]
+        move_current = move_vals[-1]
+        move_avg_1y = statistics.mean(move_vals[-252:])
+        result["move"] = {
+            "current": round(move_current, 2),
+            "avg_1y": round(move_avg_1y, 2),
+            "regime_ratio": round(move_current / move_avg_1y, 4),
+            "date": move_points[-1][0],
+            "description": "ICE BofA MOVE指数(米国債オプションの30日インプライドボラティリティ)。"
+                            "JGB固有のオプションIVは無料で取得できないため、金利IVレジームの代理指標として使用",
+        }
+    except Exception as exc:  # noqa: BLE001
+        print(f"WARNING: failed to fetch MOVE index: {exc}", file=sys.stderr)
+
+    try:
+        vix_points = fetch_yahoo_series(VIX_TICKER)
+        vix_vals = [v for _, v in vix_points]
+        vix_current = vix_vals[-1]
+        vix_avg_1y = statistics.mean(vix_vals[-252:])
+        result["vix"] = {
+            "current": round(vix_current, 2),
+            "avg_1y": round(vix_avg_1y, 2),
+            "regime_ratio": round(vix_current / vix_avg_1y, 4),
+            "date": vix_points[-1][0],
+            "description": "CBOE VIX指数(S&P500オプションの30日インプライドボラティリティ)。"
+                            "USD/JPY固有のオプションIV(CVOL等)は無料で取得できないため、"
+                            "リスクオフ局面で円の変動と連動しやすいVIXを為替IVレジームの代理指標として使用",
+        }
+    except Exception as exc:  # noqa: BLE001
+        print(f"WARNING: failed to fetch VIX index: {exc}", file=sys.stderr)
+
+    return result
+
+
+def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
+    """日本国債30年をUSD/JPYでドル換算した価値と、実測統計+インプライド
+    ボラティリティ(IV)レジームに基づく客観的な翌取引日レンジを算出する。"""
+    iv_regime = iv_regime or {}
     yield_history = fetch_jgb_yield_history()
     fx_history = fetch_usdjpy_history()
 
@@ -302,14 +399,25 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict):
     yield_chg_bp = [(yield_vals[i] - yield_vals[i - 1]) * 100 for i in range(1, len(yield_vals))]
     fx_chg_pct = [(fx_vals[i] / fx_vals[i - 1] - 1) * 100 for i in range(1, len(fx_vals))]
 
-    yield_vol_bp = statistics.pstdev(yield_chg_bp)
-    fx_vol_pct = statistics.pstdev(fx_chg_pct)
+    yield_vol_bp_realized = statistics.pstdev(yield_chg_bp)
+    fx_vol_pct_realized = statistics.pstdev(fx_chg_pct)
 
+    # IV(インプライドボラティリティ)レジームを実測(ヒストリカル)ボラティリティに反映する。
+    # レジーム比の(damping乗根)倍だけ実測ボラティリティを調整することで、
+    # オプション市場が「直近平均より警戒/楽観しているか」を織り込む。
+    move_ratio = iv_regime.get("move", {}).get("regime_ratio")
+    vix_ratio = iv_regime.get("vix", {}).get("regime_ratio")
+
+    yield_vol_bp = yield_vol_bp_realized * (move_ratio ** IV_REGIME_DAMPING) if move_ratio else yield_vol_bp_realized
+    fx_vol_pct = fx_vol_pct_realized * (vix_ratio ** IV_REGIME_DAMPING) if vix_ratio else fx_vol_pct_realized
+
+    # 相関は実測(ヒストリカル)ボラティリティで正規化する(IV調整は水準のみに適用し、
+    # 相関構造には反映しない)。
     n = len(yield_chg_bp)
     mean_y = statistics.mean(yield_chg_bp)
     mean_f = statistics.mean(fx_chg_pct)
     cov = sum((yield_chg_bp[i] - mean_y) * (fx_chg_pct[i] - mean_f) for i in range(n)) / n
-    correlation = cov / (yield_vol_bp * fx_vol_pct) if yield_vol_bp and fx_vol_pct else 0.0
+    correlation = cov / (yield_vol_bp_realized * fx_vol_pct_realized) if yield_vol_bp_realized and fx_vol_pct_realized else 0.0
 
     latest_fx_date, latest_fx = fx_history[-1]
     current_yield = jgb_current["value"]
@@ -351,12 +459,16 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict):
         "usd_value_per_10k_face": usd_value_per_10k_face,
         "history": usd_value_history,
         "jgb_yield_daily_vol_bp": round(yield_vol_bp, 3),
+        "jgb_yield_daily_vol_bp_realized": round(yield_vol_bp_realized, 3),
         "usd_jpy_daily_vol_pct": round(fx_vol_pct, 4),
+        "usd_jpy_daily_vol_pct_realized": round(fx_vol_pct_realized, 4),
         "yield_fx_correlation": round(correlation, 3),
+        "iv_regime": iv_regime,
         "statistical_range_90": {
             "low": range_90_low,
             "high": range_90_high,
-            "note": "過去60営業日のJGB利回り・USD/JPYの実測ボラティリティ/相関のみに基づく統計的な変動レンジ(材料の方向感は含まない)",
+            "note": "過去60営業日の実測ボラティリティを、MOVE指数・VIX指数から算出したIV(インプライドボラティリティ)"
+                    "レジーム比で調整した上での統計的な変動レンジ(個別の材料の方向感は含まない)",
         },
         "bond_info": {
             "issue": "30年利付国債(第90回)",
@@ -383,9 +495,11 @@ def main():
     except Exception as exc:  # noqa: BLE001
         print(f"WARNING: failed to fetch US unemployment data: {exc}", file=sys.stderr)
 
+    iv_regime = fetch_implied_vol_regime()
+
     if "jgb_30y" in result:
         try:
-            result["jgb_30y_bond_usd"] = fetch_jgb_30y_bond_usd(result["jgb_30y"])
+            result["jgb_30y_bond_usd"] = fetch_jgb_30y_bond_usd(result["jgb_30y"], iv_regime)
         except Exception as exc:  # noqa: BLE001
             print(f"WARNING: failed to fetch JGB 30Y USD-denominated bond data: {exc}", file=sys.stderr)
 

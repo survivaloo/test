@@ -464,7 +464,8 @@
 
     <div class="footer-note">
       為替: Frankfurter API(リアルタイム)/ 国債金利: 財務省(日次更新)/ 失業率: 米国労働統計局(月次更新)<br />
-      日本国債30年(ドル建て): 財務省・Frankfurter API(日次更新)/ AI予測分析: 手動更新スナップショット・投資助言ではありません
+      日本国債30年(ドル建て): 財務省・Frankfurter API(日次更新)/ IV(インプライドボラティリティ): MOVE指数・VIX指数(Yahoo Finance, 日次更新)<br />
+      AI予測分析: 手動更新スナップショット・投資助言ではありません
     </div>
   </div>
 
@@ -753,9 +754,18 @@
 
     if (bond.statistical_range_90) {
       items.push([
-        "統計的90%レンジ(翌営業日)",
+        "統計的90%レンジ(翌営業日, IV反映)",
         "$" + bond.statistical_range_90.low.toFixed(4) + " 〜 $" + bond.statistical_range_90.high.toFixed(4),
       ]);
+    }
+
+    if (bond.iv_regime && bond.iv_regime.move) {
+      const m = bond.iv_regime.move;
+      items.push(["金利IV(MOVE指数)", `${m.current} / 1年平均比${(m.regime_ratio * 100).toFixed(0)}%`]);
+    }
+    if (bond.iv_regime && bond.iv_regime.vix) {
+      const v = bond.iv_regime.vix;
+      items.push(["為替IV代理(VIX指数)", `${v.current} / 1年平均比${(v.regime_ratio * 100).toFixed(0)}%`]);
     }
 
     items.forEach(([label, value]) => {
@@ -829,6 +839,36 @@
           <div class="signal-bp" style="font-weight:700;">${v >= 0 ? "+" : ""}${v.toFixed(3)}${unit}<br/>±${s.toFixed(3)}${unit}</div>
         `;
         bondForecastSignalsEl.appendChild(row);
+      }
+    }
+
+    if (forecast.iv_regime) {
+      const iv = forecast.iv_regime;
+      const titleEl = document.createElement("div");
+      titleEl.style.fontWeight = "700";
+      titleEl.style.color = "#fff";
+      titleEl.style.margin = "10px 0 4px 0";
+      titleEl.textContent = "インプライドボラティリティ(IV)レジーム";
+      bondForecastSignalsEl.appendChild(titleEl);
+
+      [["move", "金利IV代理: MOVE指数(米国債)"], ["vix", "為替IV代理: VIX指数(株式)"]].forEach(([key, label]) => {
+        const g = iv[key];
+        if (!g) return;
+        const row = document.createElement("div");
+        row.className = "signal-row";
+        row.innerHTML = `
+          <div class="signal-name">${label}<div class="signal-note">${g.note || ""}</div></div>
+          <div class="signal-bp">${g.current}<br/>1年平均比${(g.regime_ratio * 100).toFixed(0)}%</div>
+        `;
+        bondForecastSignalsEl.appendChild(row);
+      });
+
+      if (iv.note) {
+        const note = document.createElement("div");
+        note.className = "forecast-note";
+        note.style.marginTop = "6px";
+        note.textContent = iv.note;
+        bondForecastSignalsEl.appendChild(note);
       }
     }
 
