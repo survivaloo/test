@@ -1,0 +1,156 @@
+{
+  "generated_at": "2026-07-04T00:49:39.838840+00:00",
+  "jgb_30y": {
+    "value": 3.937,
+    "date": "2026/7/2",
+    "date_label": "2026年7月2日",
+    "unit": "%",
+    "source": "Ministry of Finance Japan",
+    "source_url": "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/"
+  },
+  "us_unemployment": {
+    "value": 4.2,
+    "period": "2026-06",
+    "period_name": "2026年6月",
+    "unit": "%",
+    "source": "U.S. Bureau of Labor Statistics",
+    "source_url": "https://www.bls.gov/cps/"
+  },
+  "jgb_30y_bond_usd": {
+    "jgb_yield_pct": 3.937,
+    "jgb_yield_date": "2026/7/2",
+    "usd_jpy": 161.15,
+    "usd_jpy_date": "2026-07-03",
+    "jgb_jpy_price": 95.886,
+    "modified_duration": 17.59,
+    "usd_value_per_10k_face": 59.5011,
+    "jgb_yield_daily_vol_bp": 4.073,
+    "usd_jpy_daily_vol_pct": 0.3831,
+    "yield_fx_correlation": 0.192,
+    "statistical_range_90": {
+      "low": 58.651,
+      "high": 60.3635,
+      "note": "過去60営業日のJGB利回り・USD/JPYの実測ボラティリティ/相関のみに基づく統計的な変動レンジ(材料の方向感は含まない)"
+    },
+    "bond_info": {
+      "issue": "30年利付国債(第90回)",
+      "coupon_rate": 3.7,
+      "maturity": "2056-03-20"
+    },
+    "source": "Ministry of Finance Japan (JGB利回り), Frankfurter API (USD/JPY)",
+    "source_url": "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/"
+  },
+  "jgb_30y_bond_usd_forecast": {
+    "analysis_date": "2026-07-02",
+    "analysis_date_label": "2026年7月2日",
+    "method": "ベイズ統計(逆分散加重)×モンテカルロ(2変量t分布, 20万回試行) + DCF現在価値モデル",
+    "current": {
+      "jgb_yield_pct": 3.883,
+      "usd_jpy": 161.58,
+      "jgb_jpy_price": 96.8027,
+      "usd_value_per_10k_face": 59.9101
+    },
+    "signals_jgb_yield": [
+      {
+        "name": "過去実績(ベースライン)",
+        "mean_bp": 0.31,
+        "std_bp": 4.0,
+        "note": "直近60営業日のJGB30年利回り日次変化(実測)"
+      },
+      {
+        "name": "低調な10年債入札の残存影響",
+        "mean_bp": 1.0,
+        "std_bp": 3.5,
+        "note": "財務省が7/2実施した10年債入札が低調、長期債全般で利回り上昇"
+      },
+      {
+        "name": "財政・金融政策の不透明感",
+        "mean_bp": 0.3,
+        "std_bp": 3.0,
+        "note": "先行き不透明感から投資家の様子見姿勢が強まっている"
+      }
+    ],
+    "signals_fx": [
+      {
+        "name": "過去実績(ベースライン)",
+        "mean_pct": 0.034,
+        "std_pct": 0.377,
+        "note": "直近60営業日のUSD/JPY日次変化(実測)"
+      },
+      {
+        "name": "FRB新議長タカ派発言の残存影響",
+        "mean_pct": 0.15,
+        "std_pct": 0.25,
+        "note": "7/1シントラでの発言でドル高圧力、9月利上げ観測が浮上"
+      },
+      {
+        "name": "急伸後の調整",
+        "mean_pct": -0.1,
+        "std_pct": 0.25,
+        "note": "7/1に162.71まで急伸後、7/2に161.58へ反落した動きを反映"
+      }
+    ],
+    "correlation": 0.237,
+    "posterior_jgb_yield": {
+      "mean_bp": 0.526,
+      "std_bp": 1.979,
+      "note": "JGB利回りシグナルをベイズ統合(逆分散加重)"
+    },
+    "posterior_fx": {
+      "mean_pct": 0.0266,
+      "std_pct": 0.1601,
+      "note": "USD/JPYシグナルをベイズ統合(逆分散加重)"
+    },
+    "scenarios": [
+      {
+        "label": "7月4日(土・週末で市場閑散)",
+        "date": "2026-07-04",
+        "usd_jpy_expected": 161.59,
+        "usd_jpy_range_90": [
+          161.48,
+          161.69
+        ],
+        "jgb_jpy_price_expected": 96.785,
+        "jgb_jpy_price_range_90": [
+          96.648,
+          96.921
+        ],
+        "usd_value_expected": 59.8957,
+        "usd_value_range_90": [
+          59.7946,
+          59.9964
+        ],
+        "prob_up_pct": 39.3,
+        "note": "土日は現物市場が閉まるため変動をシグナルごと0.2倍に縮小"
+      },
+      {
+        "label": "7月6日(月・次の実質取引日)",
+        "date": "2026-07-06",
+        "usd_jpy_expected": 161.62,
+        "usd_jpy_range_90": [
+          161.1,
+          162.14
+        ],
+        "jgb_jpy_price_expected": 96.715,
+        "jgb_jpy_price_range_90": [
+          96.033,
+          97.395
+        ],
+        "usd_value_expected": 59.8404,
+        "usd_value_range_90": [
+          59.3379,
+          60.3447
+        ],
+        "prob_up_pct": 39.4,
+        "note": "週明け最初の実質的な取引日"
+      }
+    ],
+    "conclusion": "利回り上昇(価格下落)とドル高(円安、ドル建て価値には逆風)の両シグナルとも小幅ながら同方向(ドル建て価値の下落方向)に偏っており、7/6のドル建て価値の上昇確率は約39%(下落確率約61%)とやや下落寄りの結果になりました。ただし90%区間は現在値を大きく挟んでおり、方向を確信できる水準ではありません。",
+    "caveats": [
+      "各シグナルの平均・標準偏差は入手可能な定性情報を主観的に定量化したもので、厳密なバックテストは未実施",
+      "JGB利回り変化とFX変化の相関(ρ=0.237)は過去60営業日の実測値だが、シグナルごとの相関構造までは反映していない",
+      "為替(USD/JPY)と金利(JGB利回り)を独立に統合後、相関ρのみで結合しており、完全なモデルではない",
+      "投資助言ではなく、教育・分析目的の試験的なモデル出力"
+    ]
+  }
+}

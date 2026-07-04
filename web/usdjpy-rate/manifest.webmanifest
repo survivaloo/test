@@ -1,0 +1,25 @@
+{
+  "name": "マーケット指標",
+  "short_name": "マーケット",
+  "description": "ドル円レート・日本国債30年金利・米国失業率を表示するテスト用アプリ",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b2d4e",
+  "theme_color": "#0b2d4e",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

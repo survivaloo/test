@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>マーケット指標</title>
+<meta name="description" content="ドル円レート・日本国債30年金利・米国失業率を表示するテスト用アプリ" />
+
+<!-- iOSでホーム画面に追加した際にアプリらしく動作させるための設定 -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="マーケット指標" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0b2d4e" />
+
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+<link rel="manifest" href="manifest.webmanifest" />
+
+<style>
+  :root {
+    color-scheme: dark;
+    --bg-top: #0b2d4e;
+    --bg-bottom: #0a842c;
+    --card-bg: rgba(255, 255, 255, 0.08);
+    --card-border: rgba(255, 255, 255, 0.14);
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.7);
+    --accent: #34c759;
+    --danger: #ff6b6b;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+    background-attachment: fixed;
+    color: var(--text-primary);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    user-select: none;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 24px;
+    gap: 16px;
+  }
+
+  h1.page-title {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--text-primary);
+    margin: 8px 0 4px 0;
+    text-align: center;
+  }
+
+  .card {
+    width: 100%;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 22px;
+    padding: 22px 20px;
+    text-align: center;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+  }
+
+  .metric-label {
+    font-size: 14px;
+    color: var(--text-secondary);
+    letter-spacing: 0.03em;
+    margin-bottom: 2px;
+  }
+
+  .metric-sub-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+  }
+
+  .metric-value {
+    font-size: 42px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    transition: opacity 0.2s ease;
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .metric-updated {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .metric-error {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--danger);
+  }
+
+  .spinner {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.25);
+    border-top-color: #ffffff;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .refresh-icon {
+    width: 18px;
+    height: 18px;
+    transition: transform 0.5s ease;
+  }
+
+  .refresh-icon.spinning {
+    animation: spin 0.8s linear infinite;
+  }
+
+  button.refresh-btn {
+    width: 100%;
+    padding: 16px;
+    font-size: 17px;
+    font-weight: 600;
+    color: #ffffff;
+    background: var(--accent);
+    border: none;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: transform 0.1s ease, opacity 0.2s ease;
+  }
+
+  button.refresh-btn:active {
+    transform: scale(0.97);
+  }
+
+  button.refresh-btn:disabled {
+    opacity: 0.6;
+  }
+
+  .install-hint {
+    width: 100%;
+    padding: 12px 16px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    text-align: center;
+  }
+
+  .install-hint.hidden { display: none; }
+
+  .footer-note {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 4px 0 16px 0;
+  }
+
+  .bond-card {
+    text-align: left;
+  }
+
+  .bond-card .metric-label,
+  .bond-card .metric-sub-label {
+    text-align: center;
+  }
+
+  .bond-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+    margin-top: 6px;
+  }
+
+  .bond-grid-item {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 10px 12px;
+  }
+
+  .bond-grid-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+
+  .bond-grid-value {
+    font-size: 18px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .forecast-scenario {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-top: 10px;
+  }
+
+  .forecast-scenario-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .forecast-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    padding: 3px 0;
+    color: var(--text-secondary);
+  }
+
+  .forecast-row strong {
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .forecast-note {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    margin-top: 8px;
+    line-height: 1.5;
+  }
+
+  details.forecast-details {
+    margin-top: 12px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+
+  details.forecast-details summary {
+    cursor: pointer;
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 13px;
+    list-style: none;
+  }
+
+  details.forecast-details summary::-webkit-details-marker { display: none; }
+
+  details.forecast-details summary::after {
+    content: "  ▼詳しく見る";
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+
+  details.forecast-details[open] summary::after {
+    content: "  ▲閉じる";
+  }
+
+  .signal-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .signal-row:last-child { border-bottom: none; }
+
+  .signal-name {
+    flex: 1.3;
+  }
+
+  .signal-bp {
+    flex: 0.7;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+  }
+
+  .signal-note {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+
+  .caveat-list {
+    margin: 8px 0 0 0;
+    padding-left: 18px;
+  }
+
+  .caveat-list li {
+    margin-bottom: 4px;
+  }
+
+  .analysis-date-badge {
+    display: inline-block;
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 2px 8px;
+    margin-bottom: 10px;
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="page-title">マーケット指標</h1>
+
+    <div class="card">
+      <div class="metric-label">USD / JPY</div>
+      <div class="metric-sub-label">1 米ドル あたり</div>
+      <div id="usdjpyValue" class="metric-value">--</div>
+      <div id="usdjpyUpdated" class="metric-updated"></div>
+      <div id="usdjpyError" class="metric-error" style="display:none;"></div>
+    </div>
+
+    <div class="card">
+      <div class="metric-label">日本国債 30年金利</div>
+      <div class="metric-sub-label">最新値</div>
+      <div id="jgbValue" class="metric-value">--</div>
+      <div id="jgbUpdated" class="metric-updated"></div>
+      <div id="jgbError" class="metric-error" style="display:none;"></div>
+    </div>
+
+    <div class="card">
+      <div class="metric-label">米国 失業率</div>
+      <div class="metric-sub-label">雇用統計(BLS)</div>
+      <div id="unrateValue" class="metric-value">--</div>
+      <div id="unrateUpdated" class="metric-updated"></div>
+      <div id="unrateError" class="metric-error" style="display:none;"></div>
+    </div>
+
+    <div class="card bond-card">
+      <div class="metric-label" style="text-align:center;">日本国債30年(ドル建て)</div>
+      <div class="metric-sub-label" style="text-align:center;">額面1万円あたりの米ドル換算価値</div>
+      <div id="bondFuturesValue" class="metric-value" style="justify-content:center;">--</div>
+      <div id="bondUpdated" class="metric-updated" style="text-align:center;"></div>
+      <div id="bondGrid" class="bond-grid"></div>
+      <div id="bondError" class="metric-error" style="display:none; text-align:center;"></div>
+    </div>
+
+    <div id="bondForecastCard" class="card bond-card" style="display:none;">
+      <div class="metric-label" style="text-align:center;">明日の価格予測(AI分析)</div>
+      <div id="bondForecastBadge" style="text-align:center;"></div>
+      <div id="bondForecastScenarios"></div>
+      <div id="bondForecastConclusion" class="forecast-note"></div>
+      <details class="forecast-details">
+        <summary>分析の詳細(手法・シグナル・注意点)</summary>
+        <div id="bondForecastMethod" class="forecast-note" style="margin-top:8px;"></div>
+        <div id="bondForecastSignals" style="margin-top:8px;"></div>
+        <ul id="bondForecastCaveats" class="caveat-list"></ul>
+      </details>
+    </div>
+
+    <div id="installHint" class="install-hint hidden">
+      このページをホーム画面に追加すると、アプリのように使えます。<br />
+      Safari下部の「共有」ボタン → 「ホーム画面に追加」をタップしてください。
+    </div>
+
+    <button id="refreshBtn" class="refresh-btn">
+      <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"></polyline>
+        <polyline points="1 20 1 14 7 14"></polyline>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+      </svg>
+      <span id="refreshLabel">更新する</span>
+    </button>
+
+    <div class="footer-note">
+      為替: Frankfurter API(リアルタイム)/ 国債金利: 財務省(日次更新)/ 失業率: 米国労働統計局(月次更新)<br />
+      日本国債30年(ドル建て): 財務省・Frankfurter API(日次更新)/ AI予測分析: 手動更新スナップショット・投資助言ではありません
+    </div>
+  </div>
+
+<script>
+  // api.frankfurter.app はリダイレクト(CORSヘッダーなし)を返すため、
+  // Safariのfetchでリダイレクト追従時にブロックされる。リダイレクトされない
+  // 新エンドポイントを直接使用する。
+  const USDJPY_API_URL = "https://api.frankfurter.dev/v1/latest?from=USD&to=JPY";
+
+  // 財務省の国債金利CSV・BLSの失業率APIはブラウザから直接取得するとCORSで
+  // ブロックされるため、GitHub Actionsで定期取得したJSONを同一オリジンから読む。
+  const MARKET_DATA_URL = "./market-data.json";
+
+  const usdjpyValueEl = document.getElementById("usdjpyValue");
+  const usdjpyUpdatedEl = document.getElementById("usdjpyUpdated");
+  const usdjpyErrorEl = document.getElementById("usdjpyError");
+
+  const jgbValueEl = document.getElementById("jgbValue");
+  const jgbUpdatedEl = document.getElementById("jgbUpdated");
+  const jgbErrorEl = document.getElementById("jgbError");
+
+  const unrateValueEl = document.getElementById("unrateValue");
+  const unrateUpdatedEl = document.getElementById("unrateUpdated");
+  const unrateErrorEl = document.getElementById("unrateError");
+
+  const bondFuturesValueEl = document.getElementById("bondFuturesValue");
+  const bondUpdatedEl = document.getElementById("bondUpdated");
+  const bondGridEl = document.getElementById("bondGrid");
+  const bondErrorEl = document.getElementById("bondError");
+
+  const bondForecastCardEl = document.getElementById("bondForecastCard");
+  const bondForecastBadgeEl = document.getElementById("bondForecastBadge");
+  const bondForecastScenariosEl = document.getElementById("bondForecastScenarios");
+  const bondForecastConclusionEl = document.getElementById("bondForecastConclusion");
+  const bondForecastMethodEl = document.getElementById("bondForecastMethod");
+  const bondForecastSignalsEl = document.getElementById("bondForecastSignals");
+  const bondForecastCaveatsEl = document.getElementById("bondForecastCaveats");
+
+  const refreshBtn = document.getElementById("refreshBtn");
+  const refreshIcon = refreshBtn.querySelector(".refresh-icon");
+  const installHint = document.getElementById("installHint");
+
+  function isStandalone() {
+    return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  }
+
+  if (!isStandalone()) {
+    installHint.classList.remove("hidden");
+  }
+
+  function spinnerHtml() {
+    return '<div class="spinner"></div>';
+  }
+
+  function setRefreshing(isRefreshing) {
+    refreshBtn.disabled = isRefreshing;
+    refreshIcon.classList.toggle("spinning", isRefreshing);
+  }
+
+  async function fetchUsdJpy() {
+    usdjpyErrorEl.style.display = "none";
+    usdjpyValueEl.innerHTML = spinnerHtml();
+
+    try {
+      const res = await fetch(USDJPY_API_URL, { cache: "no-store" });
+      if (!res.ok) throw new Error("サーバーからの応答が正しくありません。");
+      const data = await res.json();
+      const rate = data.rates && data.rates.JPY;
+      if (typeof rate !== "number") throw new Error("レート情報が見つかりませんでした。");
+
+      usdjpyValueEl.textContent = "¥" + rate.toFixed(2);
+      usdjpyUpdatedEl.textContent = "最終更新日: " + data.date;
+    } catch (err) {
+      usdjpyValueEl.textContent = "--";
+      usdjpyErrorEl.textContent = "取得に失敗しました: " + err.message;
+      usdjpyErrorEl.style.display = "block";
+    }
+  }
+
+  async function fetchMarketData() {
+    jgbErrorEl.style.display = "none";
+    unrateErrorEl.style.display = "none";
+    jgbValueEl.innerHTML = spinnerHtml();
+    unrateValueEl.innerHTML = spinnerHtml();
+
+    let data;
+    try {
+      const res = await fetch(MARKET_DATA_URL, { cache: "no-store" });
+      if (!res.ok) throw new Error("データファイルの取得に失敗しました。");
+      data = await res.json();
+    } catch (err) {
+      const message = "取得に失敗しました: " + err.message;
+      jgbValueEl.textContent = "--";
+      jgbErrorEl.textContent = message;
+      jgbErrorEl.style.display = "block";
+      unrateValueEl.textContent = "--";
+      unrateErrorEl.textContent = message;
+      unrateErrorEl.style.display = "block";
+      return;
+    }
+
+    if (data.jgb_30y) {
+      jgbValueEl.textContent = data.jgb_30y.value.toFixed(3) + "%";
+      jgbUpdatedEl.textContent = "基準日: " + (data.jgb_30y.date_label || data.jgb_30y.date);
+    } else {
+      jgbValueEl.textContent = "--";
+      jgbErrorEl.textContent = "国債金利データがありません。";
+      jgbErrorEl.style.display = "block";
+    }
+
+    if (data.us_unemployment) {
+      unrateValueEl.textContent = data.us_unemployment.value.toFixed(1) + "%";
+      unrateUpdatedEl.textContent = "対象月: " + (data.us_unemployment.period_name || data.us_unemployment.period);
+    } else {
+      unrateValueEl.textContent = "--";
+      unrateErrorEl.textContent = "失業率データがありません。";
+      unrateErrorEl.style.display = "block";
+    }
+
+    renderBondCard(data.jgb_30y_bond_usd);
+    renderBondForecast(data.jgb_30y_bond_usd_forecast);
+  }
+
+  function renderBondCard(bond) {
+    bondErrorEl.style.display = "none";
+    bondGridEl.innerHTML = "";
+
+    if (!bond) {
+      bondFuturesValueEl.textContent = "--";
+      bondErrorEl.textContent = "国債データがありません。";
+      bondErrorEl.style.display = "block";
+      return;
+    }
+
+    bondFuturesValueEl.textContent = typeof bond.usd_value_per_10k_face === "number"
+      ? "$" + bond.usd_value_per_10k_face.toFixed(4)
+      : "--";
+    bondUpdatedEl.textContent = "USD/JPY基準日: " + (bond.usd_jpy_date || "--")
+      + " / 利回り基準日: " + (bond.jgb_yield_date || "--");
+
+    const items = [
+      ["JGB30年利回り", bond.jgb_yield_pct != null ? bond.jgb_yield_pct.toFixed(3) + "%" : "--"],
+      ["USD/JPY", bond.usd_jpy != null ? "¥" + bond.usd_jpy.toFixed(2) : "--"],
+      ["JPY建て理論価格(DCF)", bond.jgb_jpy_price != null ? "¥" + bond.jgb_jpy_price.toFixed(2) : "--"],
+      ["修正デュレーション", bond.modified_duration != null ? bond.modified_duration.toFixed(2) + "年" : "--"],
+    ];
+
+    if (bond.statistical_range_90) {
+      items.push([
+        "統計的90%レンジ(翌営業日)",
+        "$" + bond.statistical_range_90.low.toFixed(4) + " 〜 $" + bond.statistical_range_90.high.toFixed(4),
+      ]);
+    }
+
+    items.forEach(([label, value]) => {
+      const div = document.createElement("div");
+      div.className = "bond-grid-item";
+      div.innerHTML = `<div class="bond-grid-label">${label}</div><div class="bond-grid-value">${value}</div>`;
+      bondGridEl.appendChild(div);
+    });
+  }
+
+  function renderBondForecast(forecast) {
+    if (!forecast) {
+      bondForecastCardEl.style.display = "none";
+      return;
+    }
+    bondForecastCardEl.style.display = "block";
+
+    bondForecastBadgeEl.innerHTML =
+      `<span class="analysis-date-badge">分析日: ${forecast.analysis_date_label || forecast.analysis_date}</span>`;
+
+    bondForecastScenariosEl.innerHTML = "";
+    (forecast.scenarios || []).forEach((sc) => {
+      const div = document.createElement("div");
+      div.className = "forecast-scenario";
+      div.innerHTML = `
+        <div class="forecast-scenario-title">${sc.label}</div>
+        <div class="forecast-row"><span>ドル建て価値 期待値</span><strong>$${sc.usd_value_expected.toFixed(4)}</strong></div>
+        <div class="forecast-row"><span>ドル建て価値 90%区間</span><strong>$${sc.usd_value_range_90[0].toFixed(4)} 〜 $${sc.usd_value_range_90[1].toFixed(4)}</strong></div>
+        <div class="forecast-row"><span>想定USD/JPY</span><strong>¥${sc.usd_jpy_expected.toFixed(2)}</strong></div>
+        <div class="forecast-row"><span>価値上昇確率</span><strong>${sc.prob_up_pct.toFixed(1)}%</strong></div>
+        <div class="forecast-note">${sc.note || ""}</div>
+      `;
+      bondForecastScenariosEl.appendChild(div);
+    });
+
+    bondForecastConclusionEl.textContent = forecast.conclusion || "";
+
+    bondForecastMethodEl.textContent = forecast.method || "";
+
+    bondForecastSignalsEl.innerHTML = "";
+
+    function renderSignalGroup(title, signals, valueKey, stdKey, unit, posterior) {
+      if (!signals || !signals.length) return;
+      const titleEl = document.createElement("div");
+      titleEl.style.fontWeight = "700";
+      titleEl.style.color = "#fff";
+      titleEl.style.margin = "10px 0 4px 0";
+      titleEl.textContent = title;
+      bondForecastSignalsEl.appendChild(titleEl);
+
+      signals.forEach((sig) => {
+        const row = document.createElement("div");
+        row.className = "signal-row";
+        const v = sig[valueKey];
+        const s = sig[stdKey];
+        row.innerHTML = `
+          <div class="signal-name">${sig.name}<div class="signal-note">${sig.note || ""}</div></div>
+          <div class="signal-bp">${v >= 0 ? "+" : ""}${v.toFixed(3)}${unit}<br/>±${s.toFixed(3)}${unit}</div>
+        `;
+        bondForecastSignalsEl.appendChild(row);
+      });
+
+      if (posterior) {
+        const v = posterior[valueKey];
+        const s = posterior[stdKey];
+        const row = document.createElement("div");
+        row.className = "signal-row";
+        row.style.marginTop = "4px";
+        row.innerHTML = `
+          <div class="signal-name" style="font-weight:700; color:#fff;">→ 事後分布(統合後)<div class="signal-note">${posterior.note || ""}</div></div>
+          <div class="signal-bp" style="font-weight:700;">${v >= 0 ? "+" : ""}${v.toFixed(3)}${unit}<br/>±${s.toFixed(3)}${unit}</div>
+        `;
+        bondForecastSignalsEl.appendChild(row);
+      }
+    }
+
+    renderSignalGroup("JGB利回りシグナル(bp)", forecast.signals_jgb_yield, "mean_bp", "std_bp", "bp", forecast.posterior_jgb_yield);
+    renderSignalGroup("USD/JPYシグナル(%)", forecast.signals_fx, "mean_pct", "std_pct", "%", forecast.posterior_fx);
+
+    if (forecast.correlation != null) {
+      const corrNote = document.createElement("div");
+      corrNote.className = "forecast-note";
+      corrNote.style.marginTop = "8px";
+      corrNote.textContent = `JGB利回り変化とUSD/JPY変化の実測相関: ρ = ${forecast.correlation.toFixed(3)}(モンテカルロで両者を相関させて同時にシミュレーション)`;
+      bondForecastSignalsEl.appendChild(corrNote);
+    }
+
+    bondForecastCaveatsEl.innerHTML = "";
+    (forecast.caveats || []).forEach((c) => {
+      const li = document.createElement("li");
+      li.textContent = c;
+      bondForecastCaveatsEl.appendChild(li);
+    });
+  }
+
+  async function fetchAll() {
+    setRefreshing(true);
+    await Promise.all([fetchUsdJpy(), fetchMarketData()]);
+    setRefreshing(false);
+  }
+
+  refreshBtn.addEventListener("click", fetchAll);
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") fetchAll();
+  });
+
+  fetchAll();
+
+  // 以前登録していたService Workerが古いキャッシュを返し続ける問題があったため、
+  // 新規登録は行わず、既存の登録があれば掃除する(sw.js側でも自己解除する)。
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      regs.forEach((reg) => reg.unregister());
+    });
+    if (window.caches) {
+      caches.keys().then((keys) => keys.forEach((key) => caches.delete(key)));
+    }
+  }
+</script>
+</body>
+</html>

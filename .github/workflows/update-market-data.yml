@@ -1,0 +1,42 @@
+name: Update Market Data (JGB 30Y / US Unemployment)
+
+on:
+  schedule:
+    # 毎日 09:00 JST (00:00 UTC) に実行
+    - cron: "0 0 * * *"
+  workflow_dispatch: {}
+  push:
+    branches: ["cursor/**", "main", "claude/**"]
+    paths:
+      - "scripts/fetch_market_data.py"
+      - ".github/workflows/update-market-data.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch market data
+        run: python3 scripts/fetch_market_data.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- web/usdjpy-rate/market-data.json; then
+            git add web/usdjpy-rate/market-data.json
+            git commit -m "chore: update market data (JGB 30Y / US unemployment)"
+            git push
+          else
+            echo "No changes to market-data.json"
+          fi
