@@ -325,6 +325,57 @@
     padding: 2px 8px;
     margin-bottom: 10px;
   }
+
+  .change-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    padding: 3px 10px;
+    border-radius: 10px;
+    margin: 2px 0 4px 0;
+  }
+
+  .change-badge.up {
+    color: #34c759;
+    background: rgba(52, 199, 89, 0.15);
+  }
+
+  .change-badge.down {
+    color: #ff6b6b;
+    background: rgba(255, 107, 107, 0.15);
+  }
+
+  .change-badge.flat {
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .change-badge .arrow {
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  .chart-wrap {
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  svg.sparkline {
+    width: 100%;
+    height: 60px;
+    display: block;
+  }
+
+  .chart-range-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10.5px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
 </style>
 </head>
 <body>
@@ -335,31 +386,51 @@
       <div class="metric-label">USD / JPY</div>
       <div class="metric-sub-label">1 米ドル あたり</div>
       <div id="usdjpyValue" class="metric-value">--</div>
+      <div id="usdjpyChange" class="change-badge flat" style="display:none;"></div>
       <div id="usdjpyUpdated" class="metric-updated"></div>
       <div id="usdjpyError" class="metric-error" style="display:none;"></div>
+      <div class="chart-wrap">
+        <svg id="usdjpyChart" class="sparkline" viewBox="0 0 300 60" preserveAspectRatio="none"></svg>
+        <div id="usdjpyChartRange" class="chart-range-label"></div>
+      </div>
     </div>
 
     <div class="card">
       <div class="metric-label">日本国債 30年金利</div>
       <div class="metric-sub-label">最新値</div>
       <div id="jgbValue" class="metric-value">--</div>
+      <div id="jgbChange" class="change-badge flat" style="display:none;"></div>
       <div id="jgbUpdated" class="metric-updated"></div>
       <div id="jgbError" class="metric-error" style="display:none;"></div>
+      <div class="chart-wrap">
+        <svg id="jgbChart" class="sparkline" viewBox="0 0 300 60" preserveAspectRatio="none"></svg>
+        <div id="jgbChartRange" class="chart-range-label"></div>
+      </div>
     </div>
 
     <div class="card">
       <div class="metric-label">米国 失業率</div>
       <div class="metric-sub-label">雇用統計(BLS)</div>
       <div id="unrateValue" class="metric-value">--</div>
+      <div id="unrateChange" class="change-badge flat" style="display:none;"></div>
       <div id="unrateUpdated" class="metric-updated"></div>
       <div id="unrateError" class="metric-error" style="display:none;"></div>
+      <div class="chart-wrap">
+        <svg id="unrateChart" class="sparkline" viewBox="0 0 300 60" preserveAspectRatio="none"></svg>
+        <div id="unrateChartRange" class="chart-range-label"></div>
+      </div>
     </div>
 
     <div class="card bond-card">
       <div class="metric-label" style="text-align:center;">日本国債30年(ドル建て)</div>
       <div class="metric-sub-label" style="text-align:center;">額面1万円あたりの米ドル換算価値</div>
       <div id="bondFuturesValue" class="metric-value" style="justify-content:center;">--</div>
+      <div style="text-align:center;"><div id="bondChange" class="change-badge flat" style="display:none;"></div></div>
       <div id="bondUpdated" class="metric-updated" style="text-align:center;"></div>
+      <div class="chart-wrap">
+        <svg id="bondChart" class="sparkline" viewBox="0 0 300 60" preserveAspectRatio="none"></svg>
+        <div id="bondChartRange" class="chart-range-label"></div>
+      </div>
       <div id="bondGrid" class="bond-grid"></div>
       <div id="bondError" class="metric-error" style="display:none; text-align:center;"></div>
     </div>
@@ -410,19 +481,31 @@
   const usdjpyValueEl = document.getElementById("usdjpyValue");
   const usdjpyUpdatedEl = document.getElementById("usdjpyUpdated");
   const usdjpyErrorEl = document.getElementById("usdjpyError");
+  const usdjpyChangeEl = document.getElementById("usdjpyChange");
+  const usdjpyChartEl = document.getElementById("usdjpyChart");
+  const usdjpyChartRangeEl = document.getElementById("usdjpyChartRange");
 
   const jgbValueEl = document.getElementById("jgbValue");
   const jgbUpdatedEl = document.getElementById("jgbUpdated");
   const jgbErrorEl = document.getElementById("jgbError");
+  const jgbChangeEl = document.getElementById("jgbChange");
+  const jgbChartEl = document.getElementById("jgbChart");
+  const jgbChartRangeEl = document.getElementById("jgbChartRange");
 
   const unrateValueEl = document.getElementById("unrateValue");
   const unrateUpdatedEl = document.getElementById("unrateUpdated");
   const unrateErrorEl = document.getElementById("unrateError");
+  const unrateChangeEl = document.getElementById("unrateChange");
+  const unrateChartEl = document.getElementById("unrateChart");
+  const unrateChartRangeEl = document.getElementById("unrateChartRange");
 
   const bondFuturesValueEl = document.getElementById("bondFuturesValue");
   const bondUpdatedEl = document.getElementById("bondUpdated");
   const bondGridEl = document.getElementById("bondGrid");
   const bondErrorEl = document.getElementById("bondError");
+  const bondChangeEl = document.getElementById("bondChange");
+  const bondChartEl = document.getElementById("bondChart");
+  const bondChartRangeEl = document.getElementById("bondChartRange");
 
   const bondForecastCardEl = document.getElementById("bondForecastCard");
   const bondForecastBadgeEl = document.getElementById("bondForecastBadge");
@@ -448,14 +531,96 @@
     return '<div class="spinner"></div>';
   }
 
+  // values: 数値の配列(古い→新しい順)。SVGでシンプルな折れ線チャートを描画する。
+  function renderSparkline(svgEl, values, isUp) {
+    if (!svgEl || !values || values.length < 2) {
+      if (svgEl) svgEl.innerHTML = "";
+      return;
+    }
+    const width = 300;
+    const height = 60;
+    const padding = 4;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = (max - min) || Math.abs(max) || 1;
+    const step = (width - padding * 2) / (values.length - 1);
+
+    const points = values.map((v, i) => {
+      const x = padding + i * step;
+      const y = padding + (height - padding * 2) * (1 - (v - min) / range);
+      return [x, y];
+    });
+
+    const linePath = points.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
+    const areaPath = linePath
+      + ` L${points[points.length - 1][0].toFixed(1)},${height - padding}`
+      + ` L${points[0][0].toFixed(1)},${height - padding} Z`;
+
+    const color = isUp ? "#34c759" : (isUp === false ? "#ff6b6b" : "rgba(255,255,255,0.6)");
+
+    svgEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svgEl.innerHTML = `
+      <path d="${areaPath}" fill="${color}" opacity="0.15"></path>
+      <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+      <circle cx="${points[points.length - 1][0].toFixed(1)}" cy="${points[points.length - 1][1].toFixed(1)}" r="3" fill="${color}"></circle>
+    `;
+  }
+
+  // change-badge要素に前回値との差分(▲上昇/▼下落/―横ばい)を表示する。
+  function renderChangeBadge(el, current, previous, decimals, unit) {
+    if (!el) return;
+    if (current == null || previous == null || isNaN(current) || isNaN(previous)) {
+      el.style.display = "none";
+      return;
+    }
+    const diff = current - previous;
+    el.style.display = "inline-flex";
+    el.classList.remove("up", "down", "flat");
+
+    const absDiff = Math.abs(diff).toFixed(decimals);
+    const pct = previous !== 0 ? (diff / previous * 100).toFixed(2) : null;
+
+    const isPrefixUnit = unit === "$";
+    const fmt = (sign) => isPrefixUnit ? `${sign}${unit}${absDiff}` : `${sign}${absDiff}${unit}`;
+
+    if (Math.abs(diff) < Math.pow(10, -decimals) / 2) {
+      el.classList.add("flat");
+      el.innerHTML = `<span class="arrow">―</span><span>変化なし</span>`;
+    } else if (diff > 0) {
+      el.classList.add("up");
+      el.innerHTML = `<span class="arrow">▲</span><span>${fmt("+")}${pct !== null ? ` (+${pct}%)` : ""}</span>`;
+    } else {
+      el.classList.add("down");
+      el.innerHTML = `<span class="arrow">▼</span><span>${fmt("-")}${pct !== null ? ` (-${Math.abs(pct)}%)` : ""}</span>`;
+    }
+    return diff > 0 ? true : (diff < 0 ? false : null);
+  }
+
+  function renderChartRangeLabel(el, labels) {
+    if (!el || !labels || !labels.length) {
+      if (el) el.innerHTML = "";
+      return;
+    }
+    el.innerHTML = `<span>${labels[0]}</span><span>${labels[labels.length - 1]}</span>`;
+  }
+
   function setRefreshing(isRefreshing) {
     refreshBtn.disabled = isRefreshing;
     refreshIcon.classList.toggle("spinning", isRefreshing);
   }
 
+  function usdJpyHistoryUrl(days) {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - days);
+    const fmt = (d) => d.toISOString().slice(0, 10);
+    return `https://api.frankfurter.dev/v1/${fmt(start)}..${fmt(end)}?from=USD&to=JPY`;
+  }
+
   async function fetchUsdJpy() {
     usdjpyErrorEl.style.display = "none";
     usdjpyValueEl.innerHTML = spinnerHtml();
+    usdjpyChangeEl.style.display = "none";
 
     try {
       const res = await fetch(USDJPY_API_URL, { cache: "no-store" });
@@ -466,6 +631,26 @@
 
       usdjpyValueEl.textContent = "¥" + rate.toFixed(2);
       usdjpyUpdatedEl.textContent = "最終更新日: " + data.date;
+
+      try {
+        const histRes = await fetch(usdJpyHistoryUrl(90), { cache: "no-store" });
+        if (histRes.ok) {
+          const histData = await histRes.json();
+          const entries = Object.entries(histData.rates || {}).sort((a, b) => a[0].localeCompare(b[0]));
+          const values = entries.map(([, v]) => v.JPY);
+          const dates = entries.map(([d]) => d);
+          if (values.length && values[values.length - 1] !== rate) {
+            values.push(rate);
+            dates.push(data.date);
+          }
+          const previous = values.length > 1 ? values[values.length - 2] : null;
+          const isUp = renderChangeBadge(usdjpyChangeEl, rate, previous, 2, "円");
+          renderSparkline(usdjpyChartEl, values, isUp);
+          renderChartRangeLabel(usdjpyChartRangeEl, dates);
+        }
+      } catch (histErr) {
+        // チャート取得失敗は致命的ではないため無視する
+      }
     } catch (err) {
       usdjpyValueEl.textContent = "--";
       usdjpyErrorEl.textContent = "取得に失敗しました: " + err.message;
@@ -498,6 +683,14 @@
     if (data.jgb_30y) {
       jgbValueEl.textContent = data.jgb_30y.value.toFixed(3) + "%";
       jgbUpdatedEl.textContent = "基準日: " + (data.jgb_30y.date_label || data.jgb_30y.date);
+
+      const hist = data.jgb_30y.history || [];
+      const values = hist.map((p) => p.value);
+      const dates = hist.map((p) => p.date);
+      const previous = values.length > 1 ? values[values.length - 2] : null;
+      const isUp = renderChangeBadge(jgbChangeEl, data.jgb_30y.value, previous, 3, "%");
+      renderSparkline(jgbChartEl, values, isUp);
+      renderChartRangeLabel(jgbChartRangeEl, dates);
     } else {
       jgbValueEl.textContent = "--";
       jgbErrorEl.textContent = "国債金利データがありません。";
@@ -507,6 +700,14 @@
     if (data.us_unemployment) {
       unrateValueEl.textContent = data.us_unemployment.value.toFixed(1) + "%";
       unrateUpdatedEl.textContent = "対象月: " + (data.us_unemployment.period_name || data.us_unemployment.period);
+
+      const hist = data.us_unemployment.history || [];
+      const values = hist.map((p) => p.value);
+      const periods = hist.map((p) => p.period);
+      const previous = values.length > 1 ? values[values.length - 2] : null;
+      const isUp = renderChangeBadge(unrateChangeEl, data.us_unemployment.value, previous, 1, "%");
+      renderSparkline(unrateChartEl, values, isUp);
+      renderChartRangeLabel(unrateChartRangeEl, periods);
     } else {
       unrateValueEl.textContent = "--";
       unrateErrorEl.textContent = "失業率データがありません。";
@@ -523,6 +724,7 @@
 
     if (!bond) {
       bondFuturesValueEl.textContent = "--";
+      bondChangeEl.style.display = "none";
       bondErrorEl.textContent = "国債データがありません。";
       bondErrorEl.style.display = "block";
       return;
@@ -533,6 +735,14 @@
       : "--";
     bondUpdatedEl.textContent = "USD/JPY基準日: " + (bond.usd_jpy_date || "--")
       + " / 利回り基準日: " + (bond.jgb_yield_date || "--");
+
+    const hist = bond.history || [];
+    const values = hist.map((p) => p.value);
+    const dates = hist.map((p) => p.date);
+    const previous = values.length > 1 ? values[values.length - 2] : null;
+    const isUp = renderChangeBadge(bondChangeEl, bond.usd_value_per_10k_face, previous, 4, "$");
+    renderSparkline(bondChartEl, values, isUp);
+    renderChartRangeLabel(bondChartRangeEl, dates);
 
     const items = [
       ["JGB30年利回り", bond.jgb_yield_pct != null ? bond.jgb_yield_pct.toFixed(3) + "%" : "--"],

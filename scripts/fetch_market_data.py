@@ -152,11 +152,22 @@ def fetch_jgb_30y():
 
     year, month, day = (int(p) for p in latest_date.split("/"))
 
+    try:
+        history_points = fetch_jgb_yield_history()
+        history_map = dict(history_points)
+        current_date_iso = f"{year:04d}-{month:02d}-{day:02d}"
+        history_map[current_date_iso] = float(latest_value)
+        history = [{"date": d, "value": v} for d, v in sorted(history_map.items())[-90:]]
+    except Exception as exc:  # noqa: BLE001
+        print(f"WARNING: failed to fetch JGB yield history: {exc}", file=sys.stderr)
+        history = []
+
     return {
         "value": float(latest_value),
         "date": latest_date,
         "date_label": f"{year}年{month}月{day}日",
         "unit": "%",
+        "history": history,
         "source": "Ministry of Finance Japan",
         "source_url": "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/",
     }
@@ -181,11 +192,18 @@ def fetch_us_unemployment():
 
     month_num = int(latest["period"][1:])
 
+    history = [
+        {"period": f"{p['year']}-{p['period'][1:]}", "value": float(p["value"])}
+        for p in reversed(series[:24])
+        if p.get("value") not in (None, "", "-")
+    ]
+
     return {
         "value": float(latest["value"]),
         "period": f"{latest['year']}-{latest['period'][1:]}",
         "period_name": f"{latest['year']}年{month_num}月",
         "unit": "%",
+        "history": history,
         "source": "U.S. Bureau of Labor Statistics",
         "source_url": "https://www.bls.gov/cps/",
     }
@@ -301,6 +319,18 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict):
     jpy_price, mod_duration = bond_dcf_price(current_yield, JGB_BOND_COUPON_RATE, years_to_maturity)
     usd_value_per_10k_face = round(jpy_price / latest_fx * 100, 4)
 
+    # ドル建て価値の時系列(グラフ表示用)。満期までの残存年数はほぼ一定とみなし、
+    # 各日のJGB利回りとUSD/JPYからその日時点のドル建て価値を再計算する。
+    chart_dates = sorted(set(yield_map) & set(fx_map))[-90:]
+    usd_value_history = []
+    for d in chart_dates:
+        y_val = yield_map[d]
+        fx_val = fx_map[d]
+        as_of_d = date.fromisoformat(d)
+        yrs = (JGB_BOND_MATURITY - as_of_d).days / 365.25
+        jpy_p, _ = bond_dcf_price(y_val, JGB_BOND_COUPON_RATE, yrs)
+        usd_value_history.append({"date": d, "value": round(jpy_p / fx_val * 100, 4)})
+
     # 統計モデルのみによる翌取引日のドル建て価値レンジ(平均0、実測ボラティリティ・相関を使用)
     # d ln(USD建て価値) ≈ -修正デュレーション×Δ利回り(bp)/10000 - ΔFX(%)/100 の分散から90%区間を近似
     c1 = mod_duration / 10000.0
@@ -319,6 +349,7 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict):
         "jgb_jpy_price": jpy_price,
         "modified_duration": mod_duration,
         "usd_value_per_10k_face": usd_value_per_10k_face,
+        "history": usd_value_history,
         "jgb_yield_daily_vol_bp": round(yield_vol_bp, 3),
         "usd_jpy_daily_vol_pct": round(fx_vol_pct, 4),
         "yield_fx_correlation": round(correlation, 3),
