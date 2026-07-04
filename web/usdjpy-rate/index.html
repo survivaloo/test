@@ -376,6 +376,69 @@
     color: var(--text-secondary);
     margin-top: 2px;
   }
+
+  .dist-section {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .dist-section:first-of-type {
+    margin-top: 10px;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  svg.dist-svg-square {
+    width: 100%;
+    height: 260px;
+    display: block;
+  }
+
+  .dist-rotate-wrap {
+    position: relative;
+  }
+
+  svg.dist-svg-rotatable {
+    cursor: grab;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  svg.dist-svg-rotatable:active {
+    cursor: grabbing;
+  }
+
+  .dist-reset-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 8px;
+    padding: 3px 8px;
+    cursor: pointer;
+  }
+
+  .dist-reset-btn:active {
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  .dist-caption {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+
+  .dist-axis-label {
+    font-size: 9px;
+    fill: rgba(255, 255, 255, 0.55);
+  }
 </style>
 </head>
 <body>
@@ -448,6 +511,19 @@
       </details>
     </div>
 
+    <div id="bondForecastDistCard" class="card bond-card" style="display:none;">
+      <div class="metric-label" style="text-align:center;">時間発展する確率分布(色=密度)</div>
+      <div class="metric-sub-label" style="text-align:center;">モデル: 自由度5の t分布 / ドラッグまたはスワイプで自由に回転</div>
+
+      <div class="dist-section">
+        <div class="dist-rotate-wrap">
+          <svg id="evo4dChart" class="dist-svg-square dist-svg-rotatable" viewBox="0 0 320 260"></svg>
+          <button id="evo4dResetBtn" type="button" class="dist-reset-btn" title="視点をリセット">⟲ リセット</button>
+        </div>
+        <div id="evo4dCaption" class="dist-caption"></div>
+      </div>
+    </div>
+
     <div id="installHint" class="install-hint hidden">
       このページをホーム画面に追加すると、アプリのように使えます。<br />
       Safari下部の「共有」ボタン → 「ホーム画面に追加」をタップしてください。
@@ -464,7 +540,8 @@
 
     <div class="footer-note">
       為替: Frankfurter API(リアルタイム)/ 国債金利: 財務省(日次更新)/ 失業率: 米国労働統計局(月次更新)<br />
-      日本国債30年(ドル建て): 財務省・Frankfurter API(日次更新)/ AI予測分析: 手動更新スナップショット・投資助言ではありません
+      日本国債30年(ドル建て): 財務省・Frankfurter API(日次更新)/ IV(インプライドボラティリティ): MOVE指数・VIX指数(Yahoo Finance, 日次更新)<br />
+      AI予測分析: 手動更新スナップショット・投資助言ではありません
     </div>
   </div>
 
@@ -514,6 +591,11 @@
   const bondForecastMethodEl = document.getElementById("bondForecastMethod");
   const bondForecastSignalsEl = document.getElementById("bondForecastSignals");
   const bondForecastCaveatsEl = document.getElementById("bondForecastCaveats");
+
+  const bondForecastDistCardEl = document.getElementById("bondForecastDistCard");
+  const evo4dChartEl = document.getElementById("evo4dChart");
+  const evo4dCaptionEl = document.getElementById("evo4dCaption");
+  const evo4dResetBtnEl = document.getElementById("evo4dResetBtn");
 
   const refreshBtn = document.getElementById("refreshBtn");
   const refreshIcon = refreshBtn.querySelector(".refresh-icon");
@@ -603,6 +685,276 @@
     }
     el.innerHTML = `<span>${labels[0]}</span><span>${labels[labels.length - 1]}</span>`;
   }
+
+  // ==== 時間発展する確率分布の可視化(自由回転3D) ==========================
+  // モデルはJGB利回り変化・USD/JPY変化を自由度5の(ロケーション・スケール)t分布で
+  // 扱っているため、可視化も正規分布ではなくt分布の確率密度関数(PDF)で行う。
+  // ドラッグ操作でトラックボール風に方位角・仰角を自由に変えられる、正投影による
+  // 汎用3D回転を実装している(外部3Dライブラリへの依存なし)。
+
+  const T_DF = 5;
+  // Γ((ν+1)/2) / (√(νπ)·Γ(ν/2)) の ν=5 での値(1変量t分布のピーク定数)
+  const T_UNIVAR_CONST = 0.379606;
+
+  function tPdf(x, mu, sigma) {
+    const z = (x - mu) / sigma;
+    return (T_UNIVAR_CONST / sigma) * Math.pow(1 + (z * z) / T_DF, -(T_DF + 1) / 2);
+  }
+
+  // t分布(自由度5)の片側97.5%点。90%区間[low, high]からσを逆算する際に使用。
+  const T5_CRIT_90 = 2.015;
+
+  // 密度(0〜1に正規化)を寒色→暖色のヒートカラーへ変換する(「色=密度」の次元)。
+  function densityToColor(t) {
+    const clamped = Math.max(0, Math.min(1, t));
+    const stops = [
+      [0.0, [59, 130, 246]],   // 青(低密度)
+      [0.5, [52, 199, 89]],    // 緑
+      [0.8, [255, 214, 10]],   // 黄
+      [1.0, [255, 107, 107]],  // 赤(高密度)
+    ];
+    for (let i = 0; i < stops.length - 1; i++) {
+      const [t0, c0] = stops[i];
+      const [t1, c1] = stops[i + 1];
+      if (clamped >= t0 && clamped <= t1) {
+        const f = (clamped - t0) / (t1 - t0 || 1);
+        const r = Math.round(c0[0] + (c1[0] - c0[0]) * f);
+        const g = Math.round(c0[1] + (c1[1] - c0[1]) * f);
+        const b = Math.round(c0[2] + (c1[2] - c0[2]) * f);
+        return `rgb(${r},${g},${b})`;
+      }
+    }
+    return "rgb(255,107,107)";
+  }
+
+  // 汎用3D回転+正投影(トラックボール/オービットカメラ方式)。
+  // データ空間の3軸: x=ドル建て価値、depth=時間(奥行き)、h=確率密度(高さ)。
+  // 1) 方位角theta(垂直軸まわりの回転, 左右ドラッグ)で x-depth 平面を回転
+  // 2) 仰角phiで(1)の結果の depth-h 平面をさらに回転(上下ドラッグ、見下ろし/見上げ)
+  // 3) depth軸(回転後)を捨てて正投影 → スクリーン座標。回転後のdepth値は
+  //    ペインターズアルゴリズム(奥から手前へ描画)による隠面処理の並べ替えキーとして使う。
+  function rotateProject(x, depth, h, theta, phi, cx, cy, scale, zScale) {
+    const cosT = Math.cos(theta), sinT = Math.sin(theta);
+    const x1 = x * cosT - depth * sinT;
+    const y1 = x * sinT + depth * cosT;
+    const cosP = Math.cos(phi), sinP = Math.sin(phi);
+    const depthAfter = y1 * cosP - h * sinP;
+    const hAfter = y1 * sinP + h * cosP;
+    return [cx + x1 * scale, cy - hAfter * zScale, depthAfter];
+  }
+
+  // 視点(方位角・仰角)の状態。既定値は元の等角投影に近い見た目になるよう調整。
+  const evo4dView = { theta: Math.PI / 4, phi: 0.62 };
+  const EVO4D_DEFAULT_VIEW = { theta: Math.PI / 4, phi: 0.62 };
+  const EVO4D_PHI_MIN = -1.45, EVO4D_PHI_MAX = 1.45;
+  let lastForecastForDist = null;
+
+  // --- 時間発展する確率分布(x=価値, depth=時間, h=密度, 色=密度) ---
+  function renderEvo4D(svgEl, captionEl, forecast) {
+    if (!svgEl) return;
+    const scenarios = forecast.scenarios || [];
+    if (!scenarios.length) { svgEl.innerHTML = ""; return; }
+    const current = forecast.current ? (forecast.current.usd_value_iv_adjusted || forecast.current.usd_value_per_10k_face) : null;
+
+    const width = 320, height = 260;
+    // ラベル文字がはみ出さないよう、描画領域の周囲にマージンを確保する。
+    const marginX = 30, marginTop = 16, marginBottom = 36;
+    const availW = width - marginX * 2;
+    const availH = height - marginTop - marginBottom;
+    const baseScale = 24, baseZScale = 78, heightFactor = 1.5;
+    const { theta, phi } = evo4dView;
+
+    const allVals = scenarios.map((s) => s.usd_value_expected).concat(current != null ? [current] : []);
+    const vMin = Math.min(...scenarios.map((s) => s.usd_value_range_90[0]), ...allVals) - 0.02;
+    const vMax = Math.max(...scenarios.map((s) => s.usd_value_range_90[1]), ...allVals) + 0.02;
+
+    // 時間軸(奥行き): 0=現在, 1..N=各シナリオ。中央を0に揃え、回転の軸が中心を通るようにする。
+    const rawSteps = [{ label: "現在", value: current, sigma: null }].concat(
+      scenarios.map((s) => {
+        const [low, high] = s.usd_value_range_90;
+        return { label: s.label.split("(")[0], value: s.usd_value_expected, sigma: (high - low) / (2 * T5_CRIT_90) };
+      })
+    );
+    const depthCenter = (rawSteps.length - 1) / 2;
+
+    const xNorm = (v) => ((v - vMin) / (vMax - vMin) - 0.5) * 4.4; // -2.2〜2.2 のデータ空間へ正規化
+    // リッジライン式に各時点(時間断面)ごとに自身の最大密度で正規化する(σが大きく異なる
+    // シナリオ同士でも高さを比較しやすくするため。ジョイプロット/リッジラインプロットの定石)。
+    const curves = rawSteps.map((step, ti) => {
+      const depth = ti - depthCenter;
+      if (step.sigma == null) return { depth, isSpike: true, x: xNorm(step.value), label: step.label };
+      const pts = [];
+      const N = 60;
+      let localMax = 0;
+      for (let i = 0; i <= N; i++) {
+        const v = vMin + (vMax - vMin) * (i / N);
+        const z = tPdf(v, step.value, step.sigma);
+        if (z > localMax) localMax = z;
+        pts.push([xNorm(v), z]);
+      }
+      return { depth, isSpike: false, pts, label: step.label, localMax };
+    });
+
+    // 自由回転時にもチャート全体が枠内に収まるよう、まず基準スケールで全点を仮投影して
+    // 外接矩形を求め、それに合わせてスケール・中心をその都度自動調整する(オービットカメラの
+    // オートフィットに相当)。
+    const rawProj = (x, depth, hNorm) => rotateProject(x, depth, hNorm * heightFactor, theta, phi, 0, 0, baseScale, baseZScale);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    const extend = (p) => {
+      if (p[0] < minX) minX = p[0];
+      if (p[0] > maxX) maxX = p[0];
+      if (p[1] < minY) minY = p[1];
+      if (p[1] > maxY) maxY = p[1];
+    };
+    curves.forEach((c) => {
+      if (c.isSpike) {
+        extend(rawProj(c.x, c.depth, 0));
+        extend(rawProj(c.x, c.depth, 1.15));
+      } else {
+        c.pts.forEach(([x0, z0]) => {
+          extend(rawProj(x0, c.depth, 0));
+          extend(rawProj(x0, c.depth, z0 / c.localMax));
+        });
+      }
+    });
+    const contentW = Math.max(1e-6, maxX - minX);
+    const contentH = Math.max(1e-6, maxY - minY);
+    const fitScale = Math.min(1, availW / contentW, availH / contentH);
+    const scale = baseScale * fitScale, zScale = baseZScale * fitScale;
+    const cx = width / 2 - ((minX + maxX) / 2) * fitScale;
+    const cy = marginTop + availH / 2 - ((minY + maxY) / 2) * fitScale;
+
+    const proj = (x, depth, hNorm) => rotateProject(x, depth, hNorm * heightFactor, theta, phi, cx, cy, scale, zScale);
+
+    // 各カーブの代表点(中央・高さ0)の回転後depthで奥行きソートし、遠い順(painter's algorithm)に描画する。
+    const drawables = curves.map((c) => {
+      const [, , d] = proj(c.isSpike ? c.x : 0, c.depth, 0);
+      return { c, sortDepth: d };
+    }).sort((a, b) => b.sortDepth - a.sortDepth);
+
+    let html = "";
+    // 奥行き軸のガイド線(時間の推移を示す基準線)
+    const depthValues = curves.map((c) => c.depth);
+    const axisStart = proj(0, Math.min(...depthValues), 0);
+    const axisEnd = proj(0, Math.max(...depthValues), 0);
+    html += `<line x1="${axisStart[0].toFixed(1)}" y1="${axisStart[1].toFixed(1)}" x2="${axisEnd[0].toFixed(1)}" y2="${axisEnd[1].toFixed(1)}" stroke="rgba(255,255,255,0.25)" stroke-width="1" stroke-dasharray="2,2"></line>`;
+
+    drawables.forEach(({ c }) => {
+      if (c.isSpike) {
+        const [bx, by] = proj(c.x, c.depth, 0);
+        const [tx, ty] = proj(c.x, c.depth, 1.15);
+        html += `<line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}" x2="${tx.toFixed(1)}" y2="${ty.toFixed(1)}" stroke="#ffd60a" stroke-width="2"></line>`;
+        html += `<circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="2.5" fill="#ffd60a"></circle>`;
+        html += `<text class="dist-axis-label" x="${bx.toFixed(1)}" y="${(by + 12).toFixed(1)}" text-anchor="middle">${c.label}</text>`;
+        return;
+      }
+      // 曲線下の面(密度の"体積")を、ピーク密度の色で半透明に塗って立体感を出す
+      const areaPts = c.pts.map(([x0, z0]) => proj(x0, c.depth, z0 / c.localMax));
+      const base0 = proj(c.pts[0][0], c.depth, 0);
+      const baseN = proj(c.pts[c.pts.length - 1][0], c.depth, 0);
+      const areaPath = "M" + areaPts.map(([sx, sy]) => sx.toFixed(1) + "," + sy.toFixed(1)).join(" L")
+        + ` L${baseN[0].toFixed(1)},${baseN[1].toFixed(1)} L${base0[0].toFixed(1)},${base0[1].toFixed(1)} Z`;
+      html += `<path d="${areaPath}" fill="${densityToColor(1)}" opacity="0.12"></path>`;
+
+      let segHtml = "";
+      for (let i = 0; i < c.pts.length - 1; i++) {
+        const [x0, z0] = c.pts[i];
+        const [x1, z1] = c.pts[i + 1];
+        const [sx0, sy0] = proj(x0, c.depth, z0 / c.localMax);
+        const [sx1, sy1] = proj(x1, c.depth, z1 / c.localMax);
+        const color = densityToColor(((z0 + z1) / 2) / c.localMax);
+        segHtml += `<line x1="${sx0.toFixed(1)}" y1="${sy0.toFixed(1)}" x2="${sx1.toFixed(1)}" y2="${sy1.toFixed(1)}" stroke="${color}" stroke-width="2"></line>`;
+      }
+      html += `<line x1="${base0[0].toFixed(1)}" y1="${base0[1].toFixed(1)}" x2="${baseN[0].toFixed(1)}" y2="${baseN[1].toFixed(1)}" stroke="rgba(255,255,255,0.25)" stroke-width="0.6"></line>`;
+      html += segHtml;
+      html += `<text class="dist-axis-label" x="${base0[0].toFixed(1)}" y="${(base0[1] + 12).toFixed(1)}" text-anchor="middle">${c.label}</text>`;
+    });
+
+    svgEl.innerHTML = html;
+
+    if (captionEl) {
+      captionEl.innerHTML = `x軸=ドル建て価値、奥行き=時間(現在→各シナリオ)、高さ・色=確率密度`
+        + `(リッジラインプロットのように各時点ごとに最大densityで正規化して高さを比較しやすくしている)。`
+        + `時間が進むほど分布の裾が広がる(不確実性が増す)様子を表現。`
+        + `ドラッグ/スワイプで視点を自由に回転できます。`;
+    }
+  }
+
+  function renderDistributions(forecast) {
+    if (!bondForecastDistCardEl) return;
+    if (!forecast || !forecast.posterior_jgb_yield || !forecast.posterior_fx || !forecast.scenarios || !forecast.scenarios.length) {
+      bondForecastDistCardEl.style.display = "none";
+      return;
+    }
+    bondForecastDistCardEl.style.display = "block";
+    lastForecastForDist = forecast;
+    try {
+      renderEvo4D(evo4dChartEl, evo4dCaptionEl, forecast);
+    } catch (err) {
+      bondForecastDistCardEl.style.display = "none";
+    }
+  }
+
+  // --- ドラッグ/スワイプによる自由回転の操作 ---
+  (function setupEvo4dRotationControls() {
+    if (!evo4dChartEl) return;
+    let dragging = false;
+    let startX = 0, startY = 0;
+    let startTheta = 0, startPhi = 0;
+    const SENSITIVITY = 0.012;
+
+    function rerender() {
+      if (lastForecastForDist) {
+        try { renderEvo4D(evo4dChartEl, evo4dCaptionEl, lastForecastForDist); } catch (err) { /* noop */ }
+      }
+    }
+
+    function pointerPos(evt) {
+      if (evt.touches && evt.touches.length) return [evt.touches[0].clientX, evt.touches[0].clientY];
+      return [evt.clientX, evt.clientY];
+    }
+
+    function onDragStart(evt) {
+      dragging = true;
+      const [px, py] = pointerPos(evt);
+      startX = px; startY = py;
+      startTheta = evo4dView.theta; startPhi = evo4dView.phi;
+      evo4dChartEl.style.cursor = "grabbing";
+    }
+
+    function onDragMove(evt) {
+      if (!dragging) return;
+      evt.preventDefault();
+      const [px, py] = pointerPos(evt);
+      const dx = px - startX, dy = py - startY;
+      evo4dView.theta = startTheta + dx * SENSITIVITY;
+      evo4dView.phi = Math.max(EVO4D_PHI_MIN, Math.min(EVO4D_PHI_MAX, startPhi - dy * SENSITIVITY));
+      rerender();
+    }
+
+    function onDragEnd() {
+      if (!dragging) return;
+      dragging = false;
+      evo4dChartEl.style.cursor = "grab";
+    }
+
+    evo4dChartEl.addEventListener("mousedown", onDragStart);
+    window.addEventListener("mousemove", onDragMove);
+    window.addEventListener("mouseup", onDragEnd);
+
+    evo4dChartEl.addEventListener("touchstart", onDragStart, { passive: true });
+    evo4dChartEl.addEventListener("touchmove", onDragMove, { passive: false });
+    window.addEventListener("touchend", onDragEnd);
+    window.addEventListener("touchcancel", onDragEnd);
+
+    if (evo4dResetBtnEl) {
+      evo4dResetBtnEl.addEventListener("click", () => {
+        evo4dView.theta = EVO4D_DEFAULT_VIEW.theta;
+        evo4dView.phi = EVO4D_DEFAULT_VIEW.phi;
+        rerender();
+      });
+    }
+  })();
 
   function setRefreshing(isRefreshing) {
     refreshBtn.disabled = isRefreshing;
@@ -748,14 +1100,49 @@
       ["JGB30年利回り", bond.jgb_yield_pct != null ? bond.jgb_yield_pct.toFixed(3) + "%" : "--"],
       ["USD/JPY", bond.usd_jpy != null ? "¥" + bond.usd_jpy.toFixed(2) : "--"],
       ["JPY建て理論価格(DCF)", bond.jgb_jpy_price != null ? "¥" + bond.jgb_jpy_price.toFixed(2) : "--"],
-      ["修正デュレーション", bond.modified_duration != null ? bond.modified_duration.toFixed(2) + "年" : "--"],
+      ["修正デュレーション/コンベクシティ", bond.modified_duration != null
+        ? bond.modified_duration.toFixed(2) + "年 / " + (bond.convexity != null ? bond.convexity.toFixed(3) : "--")
+        : "--"],
     ];
+
+    if (bond.usd_value_iv_adjusted != null) {
+      const adj = bond.iv_present_value_adjustment ? bond.iv_present_value_adjustment.total : null;
+      items.push([
+        "IV反映後の現在価値推定",
+        "$" + bond.usd_value_iv_adjusted.toFixed(4) + (adj != null ? ` (${adj >= 0 ? "+" : ""}${adj.toFixed(4)})` : ""),
+      ]);
+    }
 
     if (bond.statistical_range_90) {
       items.push([
-        "統計的90%レンジ(翌営業日)",
+        "統計的90%レンジ(翌営業日, GARCH×IV反映)",
         "$" + bond.statistical_range_90.low.toFixed(4) + " 〜 $" + bond.statistical_range_90.high.toFixed(4),
       ]);
+    }
+
+    if (bond.expected_shortfall_95) {
+      items.push([
+        "Expected Shortfall(CVaR, 95%)",
+        "$" + bond.expected_shortfall_95.low.toFixed(4) + "以下(最悪5%シナリオの期待値)",
+      ]);
+    }
+
+    if (bond.garch11 && bond.garch11.jgb_yield) {
+      const gy = bond.garch11.jgb_yield;
+      items.push(["GARCH(1,1)予測ボラティリティ(金利)", gy.forecast_vol.toFixed(2) + "bp/日(長期平均" + gy.long_run_vol.toFixed(2) + "bp, 持続度" + gy.persistence.toFixed(2) + ")"]);
+    }
+    if (bond.garch11 && bond.garch11.usd_jpy) {
+      const gf = bond.garch11.usd_jpy;
+      items.push(["GARCH(1,1)予測ボラティリティ(為替)", gf.forecast_vol.toFixed(3) + "%/日(長期平均" + gf.long_run_vol.toFixed(3) + "%, 持続度" + gf.persistence.toFixed(2) + ")"]);
+    }
+
+    if (bond.iv_regime && bond.iv_regime.move) {
+      const m = bond.iv_regime.move;
+      items.push(["金利IV(MOVE指数)", `${m.current} / 1年平均比${(m.regime_ratio * 100).toFixed(0)}%`]);
+    }
+    if (bond.iv_regime && bond.iv_regime.vix) {
+      const v = bond.iv_regime.vix;
+      items.push(["為替IV代理(VIX指数)", `${v.current} / 1年平均比${(v.regime_ratio * 100).toFixed(0)}%`]);
     }
 
     items.forEach(([label, value]) => {
@@ -769,9 +1156,11 @@
   function renderBondForecast(forecast) {
     if (!forecast) {
       bondForecastCardEl.style.display = "none";
+      if (bondForecastDistCardEl) bondForecastDistCardEl.style.display = "none";
       return;
     }
     bondForecastCardEl.style.display = "block";
+    renderDistributions(forecast);
 
     bondForecastBadgeEl.innerHTML =
       `<span class="analysis-date-badge">分析日: ${forecast.analysis_date_label || forecast.analysis_date}</span>`;
@@ -829,6 +1218,76 @@
           <div class="signal-bp" style="font-weight:700;">${v >= 0 ? "+" : ""}${v.toFixed(3)}${unit}<br/>±${s.toFixed(3)}${unit}</div>
         `;
         bondForecastSignalsEl.appendChild(row);
+      }
+    }
+
+    if (forecast.garch11) {
+      const g = forecast.garch11;
+      const titleEl = document.createElement("div");
+      titleEl.style.fontWeight = "700";
+      titleEl.style.color = "#fff";
+      titleEl.style.margin = "10px 0 4px 0";
+      titleEl.textContent = "GARCH(1,1)ボラティリティ・クラスタリング";
+      bondForecastSignalsEl.appendChild(titleEl);
+
+      [["jgb_yield", "JGB利回り", "bp"], ["usd_jpy", "USD/JPY", "%"]].forEach(([key, label, unit]) => {
+        const gg = g[key];
+        if (!gg) return;
+        const row = document.createElement("div");
+        row.className = "signal-row";
+        row.innerHTML = `
+          <div class="signal-name">${label}: α=${gg.alpha} β=${gg.beta}(持続度${gg.persistence})</div>
+          <div class="signal-bp">予測${gg.forecast_vol}${unit}<br/>長期平均${gg.long_run_vol}${unit}</div>
+        `;
+        bondForecastSignalsEl.appendChild(row);
+      });
+
+      if (g.note) {
+        const note = document.createElement("div");
+        note.className = "forecast-note";
+        note.style.marginTop = "6px";
+        note.textContent = g.note;
+        bondForecastSignalsEl.appendChild(note);
+      }
+    }
+
+    if (forecast.iv_regime) {
+      const iv = forecast.iv_regime;
+      const titleEl = document.createElement("div");
+      titleEl.style.fontWeight = "700";
+      titleEl.style.color = "#fff";
+      titleEl.style.margin = "10px 0 4px 0";
+      titleEl.textContent = "インプライドボラティリティ(IV)レジーム";
+      bondForecastSignalsEl.appendChild(titleEl);
+
+      [["move", "金利IV代理: MOVE指数(米国債)"], ["vix", "為替IV代理: VIX指数(株式)"]].forEach(([key, label]) => {
+        const g = iv[key];
+        if (!g) return;
+        const row = document.createElement("div");
+        row.className = "signal-row";
+        row.innerHTML = `
+          <div class="signal-name">${label}<div class="signal-note">${g.note || ""}</div></div>
+          <div class="signal-bp">${g.current}<br/>1年平均比${(g.regime_ratio * 100).toFixed(0)}%</div>
+        `;
+        bondForecastSignalsEl.appendChild(row);
+      });
+
+      if (iv.note) {
+        const note = document.createElement("div");
+        note.className = "forecast-note";
+        note.style.marginTop = "6px";
+        note.textContent = iv.note;
+        bondForecastSignalsEl.appendChild(note);
+      }
+
+      if (forecast.current && forecast.current.usd_value_iv_adjusted != null) {
+        const pvNote = document.createElement("div");
+        pvNote.className = "forecast-note";
+        pvNote.style.marginTop = "4px";
+        pvNote.textContent = `現在価値推定にもIVを反映: 単純DCF $${forecast.current.usd_value_per_10k_face.toFixed(4)}`
+          + ` → IV反映後 $${forecast.current.usd_value_iv_adjusted.toFixed(4)}`
+          + `(価格の利回り・為替に対する凸性による期待値のズレをコンベクシティ補正)`;
+        bondForecastSignalsEl.appendChild(pvNote);
       }
     }
 
