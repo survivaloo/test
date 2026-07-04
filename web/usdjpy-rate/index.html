@@ -513,7 +513,7 @@
 
     <div id="bondForecastDistCard" class="card bond-card" style="display:none;">
       <div class="metric-label" style="text-align:center;">時間発展する確率分布(色=密度)</div>
-      <div class="metric-sub-label" style="text-align:center;">モデル: 自由度5の t分布 / ドラッグまたはスワイプで自由に回転</div>
+      <div class="metric-sub-label" style="text-align:center;">モデル: t分布(自由度νはデータ駆動推定) / ドラッグまたはスワイプで自由に回転</div>
 
       <div class="dist-section">
         <div class="dist-rotate-wrap">
@@ -687,22 +687,95 @@
   }
 
   // ==== 時間発展する確率分布の可視化(自由回転3D) ==========================
-  // モデルはJGB利回り変化・USD/JPY変化を自由度5の(ロケーション・スケール)t分布で
-  // 扱っているため、可視化も正規分布ではなくt分布の確率密度関数(PDF)で行う。
+  // モデルはJGB利回り変化・USD/JPY変化をt分布(自由度νはサーバー側でGARCH標準化残差から
+  // データ駆動でMLE推定, forecast.degrees_of_freedom.estimated_nu)で扱っているため、
+  // 可視化も正規分布ではなくその同じνのt分布の確率密度関数(PDF)で行う。
   // ドラッグ操作でトラックボール風に方位角・仰角を自由に変えられる、正投影による
   // 汎用3D回転を実装している(外部3Dライブラリへの依存なし)。
 
-  const T_DF = 5;
-  // Γ((ν+1)/2) / (√(νπ)·Γ(ν/2)) の ν=5 での値(1変量t分布のピーク定数)
-  const T_UNIVAR_CONST = 0.379606;
+  const T_DF_FALLBACK = 5;
 
-  function tPdf(x, mu, sigma) {
-    const z = (x - mu) / sigma;
-    return (T_UNIVAR_CONST / sigma) * Math.pow(1 + (z * z) / T_DF, -(T_DF + 1) / 2);
+  // Lanczos近似によるlogΓ(x)(標準ライブラリに無いため軽量に自前実装)。
+  function lnGamma(x) {
+    const g = 7;
+    const c = [
+      0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+      771.32342877765313, -176.61502916214059, 12.507343278686905,
+      -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7,
+    ];
+    if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - lnGamma(1 - x);
+    x -= 1;
+    let a = c[0];
+    const t = x + g + 0.5;
+    for (let i = 1; i < g + 2; i++) a += c[i] / (x + i);
+    return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
   }
 
-  // t分布(自由度5)の片側97.5%点。90%区間[low, high]からσを逆算する際に使用。
-  const T5_CRIT_90 = 2.015;
+  // 標準(ロケーション0, スケール1)t分布(自由度nu)のPDF。
+  function tPdfStandard(x, nu) {
+    const c = Math.exp(lnGamma((nu + 1) / 2) - lnGamma(nu / 2)) / Math.sqrt(nu * Math.PI);
+    return c * Math.pow(1 + (x * x) / nu, -(nu + 1) / 2);
+  }
+
+  function tPdf(x, mu, sigma, nu) {
+    const z = (x - mu) / sigma;
+    return tPdfStandard(z, nu) / sigma;
+  }
+
+  // 正則不完全ベータ関数(Numerical Recipes方式の連分数展開, Lentzのアルゴリズム)。
+  // t分布のCDF・分位点をPythonバックエンドと同じロジックで任意の自由度nuに対応させる。
+  function incompleteBetaCf(a, b, x) {
+    const maxIter = 200, eps = 3e-14, fpmin = 1e-300;
+    const qab = a + b, qap = a + 1.0, qam = a - 1.0;
+    let c = 1.0;
+    let d = 1.0 - (qab * x) / qap;
+    if (Math.abs(d) < fpmin) d = fpmin;
+    d = 1.0 / d;
+    let h = d;
+    for (let m = 1; m <= maxIter; m++) {
+      const m2 = 2 * m;
+      let aa = (m * (b - m) * x) / ((qam + m2) * (a + m2));
+      d = 1.0 + aa * d;
+      if (Math.abs(d) < fpmin) d = fpmin;
+      c = 1.0 + aa / c;
+      if (Math.abs(c) < fpmin) c = fpmin;
+      d = 1.0 / d;
+      h *= d * c;
+      aa = (-(a + m) * (qab + m) * x) / ((a + m2) * (qap + m2));
+      d = 1.0 + aa * d;
+      if (Math.abs(d) < fpmin) d = fpmin;
+      c = 1.0 + aa / c;
+      if (Math.abs(c) < fpmin) c = fpmin;
+      d = 1.0 / d;
+      const delta = d * c;
+      h *= delta;
+      if (Math.abs(delta - 1.0) < eps) break;
+    }
+    return h;
+  }
+
+  function regularizedIncompleteBeta(a, b, x) {
+    if (x <= 0) return 0.0;
+    if (x >= 1) return 1.0;
+    const bt = Math.exp(lnGamma(a + b) - lnGamma(a) - lnGamma(b) + a * Math.log(x) + b * Math.log(1 - x));
+    if (x < (a + 1) / (a + b + 2)) return (bt * incompleteBetaCf(a, b, x)) / a;
+    return 1.0 - (bt * incompleteBetaCf(b, a, 1 - x)) / b;
+  }
+
+  function tCdfStandard(x, nu) {
+    const xt = nu / (nu + x * x);
+    const p = 0.5 * regularizedIncompleteBeta(nu / 2, 0.5, xt);
+    return x < 0 ? p : 1 - p;
+  }
+
+  function tQuantileStandard(p, nu) {
+    let lo = -300, hi = 300;
+    for (let i = 0; i < 100; i++) {
+      const mid = (lo + hi) / 2;
+      if (tCdfStandard(mid, nu) < p) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
 
   // 密度(0〜1に正規化)を寒色→暖色のヒートカラーへ変換する(「色=密度」の次元)。
   function densityToColor(t) {
@@ -755,6 +828,8 @@
     const scenarios = forecast.scenarios || [];
     if (!scenarios.length) { svgEl.innerHTML = ""; return; }
     const current = forecast.current ? (forecast.current.usd_value_iv_adjusted || forecast.current.usd_value_per_10k_face) : null;
+    const nu = (forecast.degrees_of_freedom && forecast.degrees_of_freedom.estimated_nu) || T_DF_FALLBACK;
+    const tCrit90 = tQuantileStandard(0.95, nu);
 
     const width = 320, height = 260;
     // ラベル文字がはみ出さないよう、描画領域の周囲にマージンを確保する。
@@ -772,7 +847,7 @@
     const rawSteps = [{ label: "現在", value: current, sigma: null }].concat(
       scenarios.map((s) => {
         const [low, high] = s.usd_value_range_90;
-        return { label: s.label.split("(")[0], value: s.usd_value_expected, sigma: (high - low) / (2 * T5_CRIT_90) };
+        return { label: s.label.split("(")[0], value: s.usd_value_expected, sigma: (high - low) / (2 * tCrit90) };
       })
     );
     const depthCenter = (rawSteps.length - 1) / 2;
@@ -788,7 +863,7 @@
       let localMax = 0;
       for (let i = 0; i <= N; i++) {
         const v = vMin + (vMax - vMin) * (i / N);
-        const z = tPdf(v, step.value, step.sigma);
+        const z = tPdf(v, step.value, step.sigma, nu);
         if (z > localMax) localMax = z;
         pts.push([xNorm(v), z]);
       }
@@ -875,6 +950,7 @@
     if (captionEl) {
       captionEl.innerHTML = `x軸=ドル建て価値、奥行き=時間(現在→各シナリオ)、高さ・色=確率密度`
         + `(リッジラインプロットのように各時点ごとに最大densityで正規化して高さを比較しやすくしている)。`
+        + `t分布の自由度はGARCH標準化残差からデータ駆動で推定した値(ν=${nu.toFixed(2)})を使用。`
         + `時間が進むほど分布の裾が広がる(不確実性が増す)様子を表現。`
         + `ドラッグ/スワイプで視点を自由に回転できます。`;
     }
@@ -1115,25 +1191,65 @@
 
     if (bond.statistical_range_90) {
       items.push([
-        "統計的90%レンジ(翌営業日, GARCH×IV反映)",
+        "統計的90%レンジ(翌営業日, GARCH-t×IV×データ駆動ν)",
         "$" + bond.statistical_range_90.low.toFixed(4) + " 〜 $" + bond.statistical_range_90.high.toFixed(4),
       ]);
     }
 
     if (bond.expected_shortfall_95) {
+      const esC = bond.expected_shortfall_95.components || {};
+      const parts = [];
+      if (esC.parametric_t != null) parts.push("t分布$" + esC.parametric_t.toFixed(4));
+      if (esC.evt_gpd != null) parts.push("EVT$" + esC.evt_gpd.toFixed(4));
+      if (esC.fhs != null) parts.push("FHS$" + esC.fhs.toFixed(4));
       items.push([
-        "Expected Shortfall(CVaR, 95%)",
-        "$" + bond.expected_shortfall_95.low.toFixed(4) + "以下(最悪5%シナリオの期待値)",
+        "Expected Shortfall(CVaR, 95%, アンサンブル)",
+        "$" + bond.expected_shortfall_95.low.toFixed(4) + "以下(最悪5%シナリオの期待値)"
+          + (parts.length ? `<br/><span style="font-size:0.78em;opacity:0.75;">内訳: ${parts.join(" / ")}</span>` : ""),
       ]);
+    }
+
+    if (bond.degrees_of_freedom) {
+      const dof = bond.degrees_of_freedom;
+      items.push(["自由度ν(裾の厚さ, データ駆動推定)", "ν = " + dof.estimated_nu + "(GARCH標準化残差からMLE推定。小さいほど裾が厚い)"]);
     }
 
     if (bond.garch11 && bond.garch11.jgb_yield) {
       const gy = bond.garch11.jgb_yield;
-      items.push(["GARCH(1,1)予測ボラティリティ(金利)", gy.forecast_vol.toFixed(2) + "bp/日(長期平均" + gy.long_run_vol.toFixed(2) + "bp, 持続度" + gy.persistence.toFixed(2) + ")"]);
+      items.push(["GARCH(1,1)-t予測ボラティリティ(金利)", gy.forecast_vol.toFixed(2) + "bp/日(長期平均" + gy.long_run_vol.toFixed(2) + "bp, 持続度" + gy.persistence.toFixed(2) + ", ν=" + gy.nu + ")"]);
     }
     if (bond.garch11 && bond.garch11.usd_jpy) {
       const gf = bond.garch11.usd_jpy;
-      items.push(["GARCH(1,1)予測ボラティリティ(為替)", gf.forecast_vol.toFixed(3) + "%/日(長期平均" + gf.long_run_vol.toFixed(3) + "%, 持続度" + gf.persistence.toFixed(2) + ")"]);
+      items.push(["GARCH(1,1)-t予測ボラティリティ(為替)", gf.forecast_vol.toFixed(3) + "%/日(長期平均" + gf.long_run_vol.toFixed(3) + "%, 持続度" + gf.persistence.toFixed(2) + ", ν=" + gf.nu + ")"]);
+    }
+
+    if (bond.evt_tail_risk) {
+      const evt = bond.evt_tail_risk;
+      items.push(["極値理論(EVT: POT+一般化パレート分布)", `形状ξ=${evt.xi.toFixed(3)}(裾の重さ) / 閾値超過${evt.n_exceedances}件中`]);
+    }
+
+    if (bond.filtered_historical_simulation) {
+      const fhs = bond.filtered_historical_simulation;
+      items.push(["Filtered Historical Simulation", `標準化残差の実測下側5%平均 = ${fhs.es_z.toFixed(2)}σ(分布形状を仮定しないノンパラメトリック推定)`]);
+    }
+
+    if (bond.backtest_var_95 && bond.backtest_var_95.kupiec) {
+      const bt = bond.backtest_var_95;
+      const k = bt.kupiec;
+      items.push([
+        "バックテスト(ローリングVaR 95%, Kupiec検定)",
+        `実測超過率${(k.observed_rate * 100).toFixed(1)}% / 理論値${(k.expected_rate * 100).toFixed(1)}%`
+          + `(${bt.n_tested}日中${bt.n_breaches}回超過, p値${k.p_value.toFixed(3)}${k.reject_at_5pct ? "・5%水準で有意差あり" : "・有意差なし"})`,
+      ]);
+    }
+
+    if (bond.yield_fx_tail_dependence) {
+      const td = bond.yield_fx_tail_dependence;
+      items.push([
+        "利回り×為替のテール依存(実測)",
+        `上位${(td.q * 100).toFixed(0)}%同士が同時発生: 実測${(td.empirical_joint_prob * 100).toFixed(1)}%`
+          + `(独立仮定なら${(td.independence_baseline * 100).toFixed(1)}%, 超過比${td.excess_ratio}倍)`,
+      ]);
     }
 
     if (bond.iv_regime && bond.iv_regime.move) {
@@ -1227,7 +1343,7 @@
       titleEl.style.fontWeight = "700";
       titleEl.style.color = "#fff";
       titleEl.style.margin = "10px 0 4px 0";
-      titleEl.textContent = "GARCH(1,1)ボラティリティ・クラスタリング";
+      titleEl.textContent = "GARCH(1,1)-tボラティリティ・クラスタリング(自由度νも同時推定)";
       bondForecastSignalsEl.appendChild(titleEl);
 
       [["jgb_yield", "JGB利回り", "bp"], ["usd_jpy", "USD/JPY", "%"]].forEach(([key, label, unit]) => {
@@ -1236,11 +1352,22 @@
         const row = document.createElement("div");
         row.className = "signal-row";
         row.innerHTML = `
-          <div class="signal-name">${label}: α=${gg.alpha} β=${gg.beta}(持続度${gg.persistence})</div>
+          <div class="signal-name">${label}: α=${gg.alpha} β=${gg.beta}(持続度${gg.persistence}, ν=${gg.nu})</div>
           <div class="signal-bp">予測${gg.forecast_vol}${unit}<br/>長期平均${gg.long_run_vol}${unit}</div>
         `;
         bondForecastSignalsEl.appendChild(row);
       });
+
+      if (g.usd_value_direct) {
+        const gd = g.usd_value_direct;
+        const row = document.createElement("div");
+        row.className = "signal-row";
+        row.innerHTML = `
+          <div class="signal-name">USD建て価値(直接モデル, クロスチェック用): α=${gd.alpha} β=${gd.beta}(持続度${gd.persistence}, ν=${gd.nu})</div>
+          <div class="signal-bp">予測${gd.forecast_vol_pct}%/日</div>
+        `;
+        bondForecastSignalsEl.appendChild(row);
+      }
 
       if (g.note) {
         const note = document.createElement("div");
@@ -1300,6 +1427,46 @@
       corrNote.style.marginTop = "8px";
       corrNote.textContent = `JGB利回り変化とUSD/JPY変化の実測相関: ρ = ${forecast.correlation.toFixed(3)}(モンテカルロで両者を相関させて同時にシミュレーション)`;
       bondForecastSignalsEl.appendChild(corrNote);
+    }
+
+    if (forecast.degrees_of_freedom) {
+      const dof = forecast.degrees_of_freedom;
+      const dofTitle = document.createElement("div");
+      dofTitle.style.fontWeight = "700";
+      dofTitle.style.color = "#fff";
+      dofTitle.style.margin = "10px 0 4px 0";
+      dofTitle.textContent = `自由度ν(裾の厚さ): データ駆動推定 ν = ${dof.estimated_nu}`;
+      bondForecastSignalsEl.appendChild(dofTitle);
+      const dofNote = document.createElement("div");
+      dofNote.className = "forecast-note";
+      dofNote.textContent = dof.note || "";
+      bondForecastSignalsEl.appendChild(dofNote);
+    }
+
+    if (forecast.backtest_note) {
+      const btTitle = document.createElement("div");
+      btTitle.style.fontWeight = "700";
+      btTitle.style.color = "#fff";
+      btTitle.style.margin = "10px 0 4px 0";
+      btTitle.textContent = "バックテスト(Kupiec検定)";
+      bondForecastSignalsEl.appendChild(btTitle);
+      const btNote = document.createElement("div");
+      btNote.className = "forecast-note";
+      btNote.textContent = forecast.backtest_note;
+      bondForecastSignalsEl.appendChild(btNote);
+    }
+
+    if (forecast.tail_dependence_note) {
+      const tdTitle = document.createElement("div");
+      tdTitle.style.fontWeight = "700";
+      tdTitle.style.color = "#fff";
+      tdTitle.style.margin = "10px 0 4px 0";
+      tdTitle.textContent = "テール依存(コピュラ的診断)";
+      bondForecastSignalsEl.appendChild(tdTitle);
+      const tdNote = document.createElement("div");
+      tdNote.className = "forecast-note";
+      tdNote.textContent = forecast.tail_dependence_note;
+      bondForecastSignalsEl.appendChild(tdNote);
     }
 
     bondForecastCaveatsEl.innerHTML = "";

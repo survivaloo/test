@@ -41,23 +41,26 @@ JGB_BOND_MATURITY = date(2056, 3, 20)
 # 詳細: 7/2の低調な10年債入札を受けた長期金利上昇や財政・金融政策を巡る不透明感、
 #       FRB新議長ウォーシュ氏のタカ派発言(残存影響は経過日数に応じて減衰させて反映)を
 #       JGB利回り変化とUSD/JPY変化それぞれについて独立シグナルとしてベイズ統合。
-#       ベースラインシグナルの標準偏差には、自動計算モデルと同じ「GARCH(1,1)予測ボラティリティ
+#       ベースラインシグナルの標準偏差には、自動計算モデルと同じ「GARCH(1,1)-t予測ボラティリティ
 #       ×IVレジーム比(MOVE/VIX)反映後の実測ボラティリティ」の幾何平均を使用した上で、
-#       実測相関(ρ)を用いた2変量t分布(自由度5)で20万回のモンテカルロシミュレーションを実施。
+#       実測相関(ρ)とGARCH標準化残差からMLE推定した自由度ν(データ駆動, 固定値5から変更)を
+#       用いた2変量t分布で20万回のモンテカルロシミュレーションを実施。
 #       現在価値そのもの(単純DCF)についても、価格が利回り・為替に対して凸(コンベックス)
 #       であることによる期待値のズレ(イェンセンの不等式)をIV反映後のσで補正
 #       (usd_value_iv_adjusted)している。
 BAYESIAN_FORECAST_SNAPSHOT = {
     "analysis_date": "2026-07-04",
     "analysis_date_label": "2026年7月4日",
-    "method": "ベイズ統計(逆分散加重)×GARCH(1,1)×IVレジーム調整×コンベクシティ補正×モンテカルロ"
-              "(2変量t分布, 20万回試行) + DCF現在価値モデル",
+    "method": "ベイズ統計(逆分散加重)×GARCH(1,1)-t(自由度νも同時推定)×IVレジーム調整×"
+              "コンベクシティ補正×モンテカルロ(2変量t分布, データ駆動ν, 20万回試行) + "
+              "DCF現在価値モデル + EVT(極値理論)/FHS(ヒストリカル・シミュレーション)による"
+              "テールリスクのクロスチェック",
     "current": {
         "jgb_yield_pct": 3.937,
         "usd_jpy": 161.15,
         "jgb_jpy_price": 95.886,
         "usd_value_per_10k_face": 59.5011,
-        "usd_value_iv_adjusted": 59.5052,
+        "usd_value_iv_adjusted": 59.505,
         "note": "usd_value_per_10k_faceは単純DCF価格、usd_value_iv_adjustedはIV反映後の"
                 "コンベクシティ補正込みの現在価値推定。コンベクシティ効果は"
                 "現状のボラティリティ水準では僅少",
@@ -73,20 +76,31 @@ BAYESIAN_FORECAST_SNAPSHOT = {
         "note": "JGB・USD/JPY固有のオプションIV(CME CVOL、CBOE JYVIX等)は無料で継続取得できるAPIが"
                 "存在しないため、金利IVの代理としてMOVE指数、為替IVの代理としてVIX指数を採用",
     },
+    "degrees_of_freedom": {
+        "estimated_nu": 5.04,
+        "source": "usd_value_direct_garch_t",
+        "note": "従来固定していた「自由度5」を、USD建て価値の日次変化率にGARCH(1,1)-tを"
+                "直接あてはめてMLE推定した値(5.04)に更新。従来の仮定がほぼ妥当だったことが"
+                "データで裏付けられた形",
+    },
     "garch11": {
-        "jgb_yield": {"alpha": 0.2593, "beta": 0.6553, "persistence": 0.9146,
-                       "forecast_vol": 5.38, "long_run_vol": 3.59},
-        "usd_jpy": {"alpha": 0.0751, "beta": 0.8461, "persistence": 0.9213,
-                    "forecast_vol": 0.506, "long_run_vol": 0.651},
-        "note": "GARCH(1,1)(分散ターゲティング法によるMLE)による翌営業日の予測ボラティリティ。"
-                "JGB利回りは直近の入札不調によるショックの持続(α=0.26と反応感度が高め)で"
-                "長期平均(3.59bp)より予測値(5.38bp)が上振れ、USD/JPYは逆に直近落ち着いており"
-                "長期平均(0.651%)より予測値(0.506%)が下振れ。ベースラインシグナルのσは"
-                "このGARCH予測値とIV反映後の実測ボラティリティの幾何平均",
+        "jgb_yield": {"alpha": 0.3957, "beta": 0.5661, "persistence": 0.9618,
+                       "forecast_vol": 6.04, "long_run_vol": 3.59, "nu": 4.02},
+        "usd_jpy": {"alpha": 0.194, "beta": 0.8049, "persistence": 0.9989,
+                    "forecast_vol": 0.308, "long_run_vol": 0.651, "nu": 3.34},
+        "usd_value_direct": {"alpha": 0.3274, "beta": 0.4771, "persistence": 0.8046,
+                              "forecast_vol_pct": 1.058, "nu": 5.04},
+        "note": "GARCH(1,1)-t(分散ターゲティング法によるMLE, 反復プロファイル尤度で自由度νも"
+                "同時推定)による翌営業日の予測ボラティリティ。JGB利回りは直近の入札不調による"
+                "ショックの持続(α=0.40と反応感度が高め)で長期平均(3.59bp)より予測値(6.04bp)が"
+                "上振れ、USD/JPYはボラティリティの持続性が非常に高い(β=0.80)ものの直近は落ち着いて"
+                "おり長期平均(0.651%)より予測値(0.308%)が下振れ。usd_value_directは利回り・為替を"
+                "合成せずUSD建て価値の変化率に直接あてはめたクロスチェック用モデルで、"
+                "自由度ν=5.04は全体の統計的自由度推定に採用",
     },
     "signals_jgb_yield": [
-        {"name": "過去実績(ベースライン, GARCH(1,1)×IV反映)", "mean_bp": 0.40, "std_bp": 4.55,
-         "note": "GARCH(1,1)翌日予測ボラティリティ(5.38bp)とIV反映後の実測ボラティリティ"
+        {"name": "過去実績(ベースライン, GARCH(1,1)-t×IV反映)", "mean_bp": 0.40, "std_bp": 4.82,
+         "note": "GARCH(1,1)-t翌日予測ボラティリティ(6.04bp)とIV反映後の実測ボラティリティ"
                  "(3.84bp)の幾何平均"},
         {"name": "低調な10年債入札の残存影響(2営業日経過し減衰)", "mean_bp": 0.5, "std_bp": 3.5,
          "note": "財務省が7/2実施した10年債入札が低調、長期債全般で利回り上昇。影響は徐々に減衰と想定"},
@@ -94,9 +108,9 @@ BAYESIAN_FORECAST_SNAPSHOT = {
          "note": "先行き不透明感から投資家の様子見姿勢が強まっている"},
     ],
     "signals_fx": [
-        {"name": "過去実績(ベースライン, GARCH(1,1)×IV反映)", "mean_pct": 0.023, "std_pct": 0.426,
-         "note": "GARCH(1,1)翌日予測ボラティリティ(0.506%)とIV反映後の実測ボラティリティ"
-                 "(0.358%)の幾何平均"},
+        {"name": "過去実績(ベースライン, GARCH(1,1)-t×IV反映)", "mean_pct": 0.023, "std_pct": 0.334,
+         "note": "GARCH(1,1)-t翌日予測ボラティリティ(0.308%)とIV反映後の実測ボラティリティ"
+                 "(0.362%)の幾何平均"},
         {"name": "FRB新議長タカ派発言の残存影響(減衰)", "mean_pct": 0.10, "std_pct": 0.25,
          "note": "7/1シントラでの発言によるドル高圧力は残るが影響は逓減と想定"},
         {"name": "続落基調の継続", "mean_pct": -0.08, "std_pct": 0.22,
@@ -104,64 +118,84 @@ BAYESIAN_FORECAST_SNAPSHOT = {
     ],
     "correlation": 0.192,
     "posterior_jgb_yield": {
-        "mean_bp": 0.387,
-        "std_bp": 2.037,
+        "mean_bp": 0.388,
+        "std_bp": 2.059,
         "note": "JGB利回りシグナルをベイズ統合(逆分散加重)。ベースラインσに"
-                "GARCH(1,1)×IVレジームの複合ボラティリティを使用済みのため追加調整は不要",
+                "GARCH(1,1)-t×IVレジームの複合ボラティリティを使用済みのため追加調整は不要",
     },
     "posterior_fx": {
-        "mean_pct": 0.0018,
-        "std_pct": 0.154,
+        "mean_pct": 0.0034,
+        "std_pct": 0.148,
         "note": "USD/JPYシグナルをベイズ統合(逆分散加重)。ベースラインσに"
-                "GARCH(1,1)×IVレジームの複合ボラティリティを使用済みのため追加調整は不要",
+                "GARCH(1,1)-t×IVレジームの複合ボラティリティを使用済みのため追加調整は不要",
     },
     "expected_shortfall_95": {
         "note": "Expected Shortfall(CVaR, 95%)は自動計算モデル(jgb_30y_bond_usd.expected_shortfall_95)"
-                "を参照。最悪5%シナリオの期待値はVaR(90%区間下限)よりさらに厳しい水準になる",
+                "を参照。パラメトリック(データ駆動ν)・EVT(極値理論)・FHS(ヒストリカル・"
+                "シミュレーション)の3手法のうち最も保守的な値を採用したアンサンブル値で、"
+                "VaR(90%区間下限)よりさらに厳しい水準になる",
     },
+    "backtest_note": "ローリング60日窓のVaR(95%)バックテストでは、実測超過率(観測期間で約2.4%)が"
+                      "理論値(5%)を下回っておりKupiec検定でも統計的に有意な乖離が確認されたが、"
+                      "これはモデルが直近相場で「やや保守的すぎる」(見積もりが厳しめ)方向の乖離であり、"
+                      "危険側(超過が想定より多い)の乖離ではない点に留意",
+    "tail_dependence_note": "利回り上昇と円安が同時に上位10%の悪材料となる経験的な同時確率は、"
+                             "正規分布(独立)を仮定した場合の理論値の約1.7倍(超過比1.73)。"
+                             "線形相関(ρ=0.192)だけでは捉えきれない、ストレス時の連動性の強さを示唆しており、"
+                             "テールシナリオでは前提の相関よりも実際の共倒れリスクが高い可能性がある",
     "scenarios": [
         {
             "label": "7月4日(土・週末で市場閑散)",
             "date": "2026-07-04",
             "usd_jpy_expected": 161.15,
-            "usd_jpy_range_90": [161.05, 161.25],
+            "usd_jpy_range_90": [161.08, 161.23],
             "jgb_jpy_price_expected": 95.873,
-            "jgb_jpy_price_range_90": [95.734, 96.012],
-            "usd_value_expected": 59.4928,
-            "usd_value_range_90": [59.3929, 59.5929],
-            "prob_up_pct": 43.7,
-            "note": "土日は現物市場が閉まるため変動をシグナルごと0.2倍に縮小(GARCH×IV反映後の値を使用)",
+            "jgb_jpy_price_range_90": [95.764, 95.981],
+            "usd_value_expected": 59.4926,
+            "usd_value_range_90": [59.4152, 59.5699],
+            "prob_up_pct": 41.9,
+            "note": "土日は現物市場が閉まるため変動をシグナルごと0.2倍に縮小"
+                    "(GARCH(1,1)-t×IV反映後の値・データ駆動ν=5.04を使用)",
         },
         {
             "label": "7月6日(月・次の実質取引日)",
             "date": "2026-07-06",
-            "usd_jpy_expected": 161.15,
-            "usd_jpy_range_90": [160.65, 161.65],
-            "jgb_jpy_price_expected": 95.822,
-            "jgb_jpy_price_range_90": [95.131, 96.516],
-            "usd_value_expected": 59.4604,
-            "usd_value_range_90": [58.9624, 59.9618],
-            "prob_up_pct": 43.7,
-            "note": "週明け最初の実質的な取引日。GARCH(1,1)はJGB利回りのボラティリティ・クラスタリング"
-                    "(入札不調ショックの持続)を捉えて上振れ予測する一方、IVレジーム(MOVE/VIXとも"
-                    "1年平均を下回る)は落ち着いた変動を示唆しており、両者の幾何平均で穏当なレンジに",
+            "usd_jpy_expected": 161.16,
+            "usd_jpy_range_90": [160.78, 161.53],
+            "jgb_jpy_price_expected": 95.821,
+            "jgb_jpy_price_range_90": [95.282, 96.363],
+            "usd_value_expected": 59.4592,
+            "usd_value_range_90": [59.0724, 59.8475],
+            "prob_up_pct": 41.7,
+            "note": "週明け最初の実質的な取引日。GARCH(1,1)-tはJGB利回りのボラティリティ・"
+                    "クラスタリング(入札不調ショックの持続)を捉えて上振れ予測する一方、"
+                    "IVレジーム(MOVE/VIXとも1年平均を下回る)は落ち着いた変動を示唆しており、"
+                    "両者の幾何平均で穏当なレンジに。データ駆動の自由度ν(5.04)は従来の固定値5と"
+                    "ほぼ同水準で、モデル前提が実測データに整合していたことを確認",
         },
     ],
     "conclusion": "利回り上昇(価格下落)方向のシグナルがやや優勢な一方、ドルは直近続落基調にあり"
                   "FX面はやや円高(ドル建て価値にはむしろ追い風)方向で、両シグナルの効果は一部相殺されます。"
-                  "7/6のドル建て価値の上昇確率は約44%(下落確率約56%)とやや下落寄りですが、7/2時点の"
-                  "分析(上昇確率約39%)よりも方向感はやや弱まりました。GARCH(1,1)は直近の入札不調による"
-                  "JGB利回りのボラティリティ上昇を検知しレンジをやや広げる一方、MOVE・VIXの「落ち着いた"
-                  "IVレジーム」はレンジを狭める方向に働き、両者を幾何平均でブレンドした結果、"
-                  "純ヒストリカルボラティリティのみの場合とおおむね近い水準に落ち着いています。",
+                  "7/6のドル建て価値の上昇確率は約42%(下落確率約58%)とやや下落寄りです。"
+                  "GARCH(1,1)-tは直近の入札不調によるJGB利回りのボラティリティ上昇を検知しレンジを"
+                  "やや広げる一方、MOVE・VIXの「落ち着いたIVレジーム」はレンジを狭める方向に働き、"
+                  "両者を幾何平均でブレンドした結果、純ヒストリカルボラティリティのみの場合と"
+                  "おおむね近い水準に落ち着いています。EVT・FHSによるテールリスクのクロスチェックでは"
+                  "パラメトリック(t分布)手法との大きな乖離は見られず、現在のモデル前提が概ね妥当と"
+                  "判断していますが、利回り×為替のテール依存は線形相関の想定より強い可能性があります。",
     "caveats": [
-        "各シグナルの平均・標準偏差は入手可能な定性情報を主観的に定量化したもので、厳密なバックテストは未実施",
-        "JGB利回り変化とFX変化の相関(ρ=0.192)は過去60営業日の実測値だが、シグナルごとの相関構造までは反映していない",
-        "為替(USD/JPY)と金利(JGB利回り)を独立に統合後、相関ρのみで結合しており、完全なモデルではない",
+        "各シグナルの平均・標準偏差は入手可能な定性情報を主観的に定量化したもので、厳密なバックテストは"
+        "自動計算モデルのbacktest_var_95でのみ実施(手動シグナルの妥当性検証は未実施)",
+        "JGB利回り変化とFX変化の相関(ρ=0.192)は過去60営業日の実測値だが、シグナルごとの相関構造までは"
+        "反映していない。また実測テール依存係数(excess_ratio≈1.73)が示す通り、線形相関のみを用いた"
+        "モンテカルロは極端な同時悪化シナリオの確率をやや過小評価している可能性がある",
+        "為替(USD/JPY)と金利(JGB利回り)を独立に統合後、相関ρのみで結合しており、完全なコピュラモデルではない",
         "IV(インプライドボラティリティ)はJGB・USD/JPY固有のオプション市場データではなく、"
         "無料で取得可能なMOVE指数(米国債IV)・VIX指数(株式IV)を代理指標として使用した近似",
-        "GARCH(1,1)は分散ターゲティング法・格子探索による簡易的なMLE実装であり、"
-        "定期的な再検証やより高精度な最適化(準ニュートン法等)による改善余地がある",
+        "GARCH(1,1)-tは分散ターゲティング法・格子探索・反復プロファイル尤度による簡易的なMLE実装であり、"
+        "真の同時最尤推定(準ニュートン法等によるα・β・νの同時最適化)による改善余地がある",
+        "EVT(極値理論)の閾値は上位10%点に固定しており、閾値選択(Hill plot等によるより厳密な手法)次第で"
+        "結果が変わりうる",
         "投資助言ではなく、教育・分析目的の試験的なモデル出力",
     ],
 }
@@ -412,6 +446,163 @@ def fetch_implied_vol_regime():
     return result
 
 
+# --- 汎用スチューデントのt分布: PDF・CDF・分位点関数(追加依存なし) ---
+# 自由度ν(裾の太さ)を「5に固定」せずデータから推定するには、任意のνに対応した
+# CDF/分位点関数が必要になる。正則不完全ベータ関数を Numerical Recipes 方式の
+# 連分数展開(Lentzのアルゴリズム)で計算し、そこからt分布のCDFを厳密に導出する。
+def _incomplete_beta_cf(a, b, x):
+    max_iter = 200
+    eps = 3e-14
+    fpmin = 1e-300
+    qab = a + b
+    qap = a + 1.0
+    qam = a - 1.0
+    c = 1.0
+    d = 1.0 - qab * x / qap
+    if abs(d) < fpmin:
+        d = fpmin
+    d = 1.0 / d
+    h = d
+    for m in range(1, max_iter + 1):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        if abs(d) < fpmin:
+            d = fpmin
+        c = 1.0 + aa / c
+        if abs(c) < fpmin:
+            c = fpmin
+        d = 1.0 / d
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        if abs(d) < fpmin:
+            d = fpmin
+        c = 1.0 + aa / c
+        if abs(c) < fpmin:
+            c = fpmin
+        d = 1.0 / d
+        delta = d * c
+        h *= delta
+        if abs(delta - 1.0) < eps:
+            break
+    return h
+
+
+def _regularized_incomplete_beta(a, b, x):
+    if x <= 0:
+        return 0.0
+    if x >= 1:
+        return 1.0
+    bt = math.exp(
+        math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+        + a * math.log(x) + b * math.log(1 - x)
+    )
+    if x < (a + 1) / (a + b + 2):
+        return bt * _incomplete_beta_cf(a, b, x) / a
+    return 1.0 - bt * _incomplete_beta_cf(b, a, 1 - x) / b
+
+
+def t_pdf_standard(x, nu):
+    c = math.exp(math.lgamma((nu + 1) / 2) - math.lgamma(nu / 2)) / math.sqrt(nu * math.pi)
+    return c * (1 + x * x / nu) ** (-(nu + 1) / 2)
+
+
+def t_cdf_standard(x, nu):
+    """標準(位置0, 尺度1)t分布(自由度nu)の累積分布関数(厳密解, 不完全ベータ関数経由)。"""
+    xt = nu / (nu + x * x)
+    p = 0.5 * _regularized_incomplete_beta(nu / 2, 0.5, xt)
+    return p if x < 0 else 1 - p
+
+
+def t_quantile_standard(p, nu, lo=-300.0, hi=300.0):
+    """標準t分布の分位点関数(CDFの二分探索による数値的逆関数)。"""
+    if p <= 0:
+        return -math.inf
+    if p >= 1:
+        return math.inf
+    for _ in range(100):
+        mid = (lo + hi) / 2
+        if t_cdf_standard(mid, nu) < p:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def t_expected_shortfall_multiplier(nu, alpha):
+    """標準化t分布(自由度nu)における下側Expected Shortfallの「標準偏差換算の倍率」を返す。
+    ES_α = (g_ν(q_α)/α)·(ν+q_α²)/(ν-1) (q_α=下側α分位点, g_ν=標準t分布のPDF)。"""
+    if nu <= 1:
+        return math.inf
+    q = t_quantile_standard(alpha, nu)
+    g = t_pdf_standard(q, nu)
+    return (g / alpha) * (nu + q * q) / (nu - 1)
+
+
+# --- 自由度ν(裾の太さ)のデータ駆動推定 ---
+# これまでは「自由度5」を固定値として仮定していたが、実際の裾の厚さは市場ごとに異なる。
+# GARCHで標準化した残差 z_t = r_t/σ_t (ボラティリティ・クラスタリングを除去した「純粋な
+# ショック」)にt分布をあてはめ、νを最尤推定することで、その市場固有の裾の厚さを
+# データから直接求める。
+def compute_garch_standardized_residuals(returns, omega, alpha, beta):
+    long_run_var = statistics.pvariance(returns)
+    var_t = long_run_var if long_run_var > 0 else 1e-9
+    residuals = []
+    for r in returns:
+        sigma_t = math.sqrt(var_t) if var_t > 0 else 1e-9
+        residuals.append(r / sigma_t)
+        var_t = omega + alpha * r * r + beta * var_t
+    return residuals
+
+
+def fit_t_shape(standardized_residuals):
+    """位置0のt分布を標準化残差にあてはめ、自由度ν(裾の厚さ)とスケール補正を
+    格子探索+局所精緻化によるMLEで推定する。"""
+    n = len(standardized_residuals)
+    if n < 40:
+        return None
+
+    def log_likelihood(sigma, nu):
+        if sigma <= 0:
+            return -math.inf
+        ll = 0.0
+        for z in standardized_residuals:
+            ll += math.log(t_pdf_standard(z / sigma, nu)) - math.log(sigma)
+        return ll
+
+    def grid_search(sigma_range, nu_range, steps):
+        best = (-math.inf, None, None)
+        for si in range(steps + 1):
+            sigma = sigma_range[0] + (sigma_range[1] - sigma_range[0]) * si / steps
+            for ni in range(steps + 1):
+                nu = nu_range[0] + (nu_range[1] - nu_range[0]) * ni / steps
+                ll = log_likelihood(sigma, nu)
+                if ll > best[0]:
+                    best = (ll, sigma, nu)
+        return best
+
+    best_ll, best_sigma, best_nu = grid_search((0.6, 1.6), (2.2, 40.0), 24)
+    if best_sigma is None:
+        return None
+    span_s, span_n = 0.25, 6.0
+    for _ in range(2):
+        best_ll, best_sigma, best_nu = grid_search(
+            (max(0.3, best_sigma - span_s), best_sigma + span_s),
+            (max(2.05, best_nu - span_n), best_nu + span_n),
+            16,
+        )
+        span_s /= 3.0
+        span_n /= 3.0
+
+    return {
+        "nu": round(best_nu, 2),
+        "scale": round(best_sigma, 4),
+        "log_likelihood": round(best_ll, 3),
+        "n_obs": n,
+    }
+
+
 # --- GARCH(1,1) ボラティリティモデル(分散ターゲティング法によるMLE, 追加依存なし) ---
 # 単純な過去N日の実測標準偏差は「窓内は等ウェイト、窓外は無視」という単純な仮定だが、
 # GARCH(1,1)はボラティリティ・クラスタリング(荒れた相場の後は荒れが続きやすい)を
@@ -419,7 +610,9 @@ def fetch_implied_vol_regime():
 # ここでは Engle–Mezrich (1996) の分散ターゲティング法を用い、ω = 長期分散·(1-α-β) と
 # 置くことで探索パラメータを(α, β)の2次元に削減し、格子探索+局所精緻化で最尤推定する
 # (scipy等の数値最適化ライブラリへの依存を避けるため)。
-def fit_garch11(returns):
+# nuを指定すると、正規分布の代わりに自由度nuのt分布を尤度関数に用いる
+# (Bollerslev(1987)のGARCH-tモデル。金融リターンの過剰尖度をボラティリティ推定自体にも反映)。
+def fit_garch11(returns, nu=None):
     n = len(returns)
     if n < 40:
         return None
@@ -436,7 +629,11 @@ def fit_garch11(returns):
         for r in returns:
             if var_t <= 0:
                 return -math.inf
-            ll += -0.5 * (math.log(2 * math.pi) + math.log(var_t) + (r * r) / var_t)
+            if nu is None:
+                ll += -0.5 * (math.log(2 * math.pi) + math.log(var_t) + (r * r) / var_t)
+            else:
+                sigma_t = math.sqrt(var_t)
+                ll += math.log(t_pdf_standard(r / sigma_t, nu)) - math.log(sigma_t)
             var_t = omega + alpha * r * r + beta * var_t
         return ll
 
@@ -482,29 +679,255 @@ def fit_garch11(returns):
         "long_run_vol": math.sqrt(long_run_var),
         "log_likelihood": round(best_ll, 3),
         "n_obs": n,
+        "nu": nu,
     }
 
 
-# --- Expected Shortfall(CVaR): 自由度5のt分布における解析解 ---
-# VaR(パーセンタイル)は「その水準を超える確率」しか示さないが、Expected Shortfallは
-# 「その水準を超えて悪化した場合の期待値」を示す整合的リスク尺度(coherent risk measure)で、
-# Basel III(FRTB)がVaRからESへ移行した理由でもある。
-# 標準t分布(自由度ν)のES: ES_α = -(g_ν(q_α)/α)·(ν+q_α²)/(ν-1) (q_α=下側α分位点)
-def t_dist_pdf_standard(x, df):
-    from math import gamma
-    c = gamma((df + 1) / 2) / (math.sqrt(df * math.pi) * gamma(df / 2))
-    return c * (1 + (x * x) / df) ** (-(df + 1) / 2)
+def fit_garch11_t(returns):
+    """GARCH(1,1)パラメータ(α,β)と自由度ν(裾の厚さ)を反復プロファイル尤度で
+    同時推定する。(1)正規尤度でGARCHを粗く推定→(2)標準化残差からνをMLE推定→
+    (3)推定したνでt分布尤度によりGARCHを再推定、を数回繰り返すことで、
+    (α,β,ν)の3次元同時最適化を避けつつBollerslev(1987)のGARCH-tに近い解に収束させる。"""
+    fit = fit_garch11(returns, nu=None)
+    if fit is None:
+        return None
+    shape_info = None
+    for _ in range(3):
+        resid = compute_garch_standardized_residuals(returns, fit["omega"], fit["alpha"], fit["beta"])
+        new_shape = fit_t_shape(resid)
+        if new_shape is None:
+            break
+        if shape_info and abs(new_shape["nu"] - shape_info["nu"]) < 0.05:
+            shape_info = new_shape
+            break
+        shape_info = new_shape
+        refit = fit_garch11(returns, nu=shape_info["nu"])
+        if refit is None:
+            break
+        fit = refit
+    if shape_info:
+        fit["nu"] = shape_info["nu"]
+        fit["shape_fit"] = shape_info
+    final_residuals = compute_garch_standardized_residuals(returns, fit["omega"], fit["alpha"], fit["beta"])
+    fit["_standardized_residuals"] = final_residuals
+    return fit
 
 
-def t_expected_shortfall_multiplier(df, alpha, q_alpha):
-    """標準化t分布における下側Expected Shortfallの「標準偏差換算の倍率」を返す
-    (q_alpha: 下側α分位点。自由度5・α=0.05なら q_alpha≈-2.015)。"""
-    g = t_dist_pdf_standard(q_alpha, df)
-    return (g / alpha) * (df + q_alpha ** 2) / (df - 1)
+# --- 極値理論(Extreme Value Theory): Peak-Over-Threshold法 + 一般化パレート分布(GPD) ---
+# t分布は「分布全体」の形状を単一のνで近似するが、Pickands–Balkema–de Haanの定理により、
+# 「十分高い閾値を超えた超過量」の分布は(元の分布によらず漸近的に)一般化パレート分布に
+# 従うことが知られている。分布全体ではなく裾そのものを直接モデル化することで、
+# t分布による近似が持つ「裾の中央部分に引きずられる」バイアスを避けられる。
+def fit_gpd(exceedances):
+    """一般化パレート分布(GPD)を閾値超過量にMLE(格子探索+精緻化)であてはめる。
+    形状パラメータxi(xi>0で裾が厚い)とスケールパラメータbetaを推定する。"""
+    n = len(exceedances)
+    if n < 20:
+        return None
+    mean_exc = statistics.mean(exceedances)
+    if mean_exc <= 0:
+        return None
+
+    def log_likelihood(xi, beta):
+        if beta <= 0:
+            return -math.inf
+        ll = 0.0
+        for y in exceedances:
+            z = 1 + xi * y / beta
+            if z <= 1e-9:
+                return -math.inf
+            if abs(xi) < 1e-8:
+                ll += -math.log(beta) - y / beta
+            else:
+                ll += -math.log(beta) - (1 / xi + 1) * math.log(z)
+        return ll
+
+    def grid_search(xi_range, beta_range, steps):
+        best = (-math.inf, None, None)
+        for xi_i in range(steps + 1):
+            xi = xi_range[0] + (xi_range[1] - xi_range[0]) * xi_i / steps
+            for b_i in range(steps + 1):
+                beta = beta_range[0] + (beta_range[1] - beta_range[0]) * b_i / steps
+                ll = log_likelihood(xi, beta)
+                if ll > best[0]:
+                    best = (ll, xi, beta)
+        return best
+
+    best_ll, best_xi, best_beta = grid_search((-0.4, 0.7), (mean_exc * 0.2, mean_exc * 3.0), 22)
+    if best_xi is None:
+        return None
+    span_xi, span_beta = 0.15, mean_exc * 0.6
+    for _ in range(2):
+        best_ll, best_xi, best_beta = grid_search(
+            (best_xi - span_xi, best_xi + span_xi),
+            (max(1e-6, best_beta - span_beta), best_beta + span_beta),
+            16,
+        )
+        span_xi /= 3.0
+        span_beta /= 3.0
+
+    return {
+        "xi": round(best_xi, 4),
+        "beta": round(best_beta, 6),
+        "log_likelihood": round(best_ll, 3),
+        "n_exceedances": n,
+    }
 
 
-T5_VAR_95_QUANTILE = -2.015  # 自由度5のt分布における下側5%点(既存の90%区間の算出にも使用)
-T5_ES_95_MULTIPLIER = t_expected_shortfall_multiplier(5, 0.05, T5_VAR_95_QUANTILE)
+def evt_tail_risk(loss_series, threshold_quantile=0.90, target_p=0.95):
+    """Peak-Over-Threshold法(POT)による極値理論のテールリスク推定。
+    loss_seriesは「損失が正の値になる」よう符号を揃えた系列を渡す。"""
+    n = len(loss_series)
+    if n < 80:
+        return None
+    sorted_losses = sorted(loss_series)
+    idx = min(n - 1, max(0, int(n * threshold_quantile)))
+    threshold = sorted_losses[idx]
+    exceedances = [x - threshold for x in loss_series if x > threshold]
+    n_exc = len(exceedances)
+    if n_exc < 20:
+        return None
+    gpd = fit_gpd(exceedances)
+    if gpd is None:
+        return None
+    xi, beta = gpd["xi"], gpd["beta"]
+    p_exceed = n_exc / n
+    q = 1 - target_p
+    if q >= p_exceed:
+        var = threshold
+    elif abs(xi) > 1e-6:
+        var = threshold + (beta / xi) * ((q / p_exceed) ** (-xi) - 1)
+    else:
+        var = threshold - beta * math.log(q / p_exceed)
+
+    es = None
+    if xi < 1:
+        es = (var + beta - xi * threshold) / (1 - xi) if abs(xi) > 1e-6 else var + beta
+
+    return {
+        "threshold": round(threshold, 6),
+        "threshold_quantile": threshold_quantile,
+        "xi": xi,
+        "beta": beta,
+        "n_exceedances": n_exc,
+        "n_obs": n,
+        "target_p": target_p,
+        "var": var,
+        "es": es,
+    }
+
+
+def fhs_tail_es(standardized_residuals, forecast_vol, alpha=0.05):
+    """Filtered Historical Simulation(FHS): GARCHで標準化した実測残差の経験分布を
+    (正規分布やt分布のような分布形状の仮定を一切置かずに)そのまま使い、翌日の予測
+    ボラティリティでスケールしてExpected Shortfallをノンパラメトリックに求める。"""
+    n = len(standardized_residuals)
+    if n < 40:
+        return None
+    sorted_z = sorted(standardized_residuals)
+    cutoff_idx = max(1, int(round(n * alpha)))
+    tail = sorted_z[:cutoff_idx]
+    es_z = statistics.mean(tail)
+    return {
+        "es_z": round(es_z, 4),
+        "n_tail_obs": cutoff_idx,
+        "n_obs": n,
+        "es_scaled": es_z * forecast_vol,
+    }
+
+
+def kupiec_pof_test(n_obs, n_breaches, expected_rate):
+    """Kupiec(1995)の比率的中検定(Proportion of Failures test)。
+    「VaR超過が想定通りの頻度で起きているか」を尤度比検定で評価する
+    (バーゼル規制のVaRモデル検証で標準的に用いられる手法)。"""
+    if n_obs == 0:
+        return None
+    observed_rate = n_breaches / n_obs
+    if n_breaches == 0:
+        ll_null = n_obs * math.log(1 - expected_rate)
+        ll_alt = 0.0
+    elif n_breaches == n_obs:
+        ll_null = n_obs * math.log(expected_rate)
+        ll_alt = 0.0
+    else:
+        ll_null = n_breaches * math.log(expected_rate) + (n_obs - n_breaches) * math.log(1 - expected_rate)
+        ll_alt = n_breaches * math.log(observed_rate) + (n_obs - n_breaches) * math.log(1 - observed_rate)
+    lr_stat = -2 * (ll_null - ll_alt)
+    # 自由度1のカイ二乗分布の生存確率 P(chi2_1 > x) = erfc(sqrt(x/2))
+    p_value = math.erfc(math.sqrt(max(lr_stat, 0) / 2))
+    return {
+        "n_obs": n_obs,
+        "n_breaches": n_breaches,
+        "observed_rate": round(observed_rate, 4),
+        "expected_rate": expected_rate,
+        "lr_statistic": round(lr_stat, 3),
+        "p_value": round(p_value, 4),
+        "reject_at_5pct": p_value < 0.05,
+    }
+
+
+def backtest_var(log_returns, window=60, confidence=0.95, nu=5.0):
+    """過去データに対するローリングVaRのバックテスト。各日、直前window日間の
+    実測ボラティリティからt分布ベースのVaRを計算し、翌日の実際のリターンがそれを
+    下回った(=損失がVaRを超過した)回数を数え、期待超過率とKupiec検定で比較する。"""
+    n = len(log_returns)
+    if n < window + 30:
+        return None
+    alpha = 1 - confidence
+    q_mult = t_quantile_standard(alpha, nu)  # 負値
+    breaches = 0
+    count = 0
+    for i in range(window, n):
+        hist = log_returns[i - window:i]
+        sigma = statistics.pstdev(hist)
+        mu = statistics.mean(hist)
+        var_threshold = mu + q_mult * sigma
+        count += 1
+        if log_returns[i] < var_threshold:
+            breaches += 1
+    kupiec = kupiec_pof_test(count, breaches, alpha)
+    return {
+        "window": window,
+        "confidence": confidence,
+        "nu_used": nu,
+        "n_tested": count,
+        "n_breaches": breaches,
+        "kupiec": kupiec,
+    }
+
+
+def empirical_tail_dependence(x_series, y_series, q=0.10):
+    """利回り変化とドル円変化が「同時に国債USD建て価値にとって悪い方向」に大きく
+    動く経験的な同時確率(下側/上側テール依存)を求める。正規分布(ガウス型コピュラ)を
+    仮定した相関だけでは、暴落局面での連動性の強さ(テール依存)を過小評価しうるため、
+    実測データで直接検証する。x, yは共に「値が大きいほど国債USD建て価値にとって
+    悪い」方向に符号を揃えて渡す(本アプリではyield_chg_bp, fx_chg_pctがそのまま該当)。"""
+    n = len(x_series)
+    if n < 60:
+        return None
+    sorted_x = sorted(x_series)
+    sorted_y = sorted(y_series)
+    idx = min(n - 1, max(0, int(round(n * (1 - q))) - 1))
+    x_thresh = sorted_x[idx]
+    y_thresh = sorted_y[idx]
+    joint_count = sum(1 for xv, yv in zip(x_series, y_series) if xv >= x_thresh and yv >= y_thresh)
+    empirical_prob = joint_count / n
+    independence_baseline = q * q
+    return {
+        "q": q,
+        "empirical_joint_prob": round(empirical_prob, 4),
+        "independence_baseline": round(independence_baseline, 4),
+        "excess_ratio": round(empirical_prob / independence_baseline, 3) if independence_baseline > 0 else None,
+        "n_obs": n,
+    }
+
+
+def _strip_internal_keys(d: dict | None) -> dict | None:
+    """内部計算専用のキー(標準化残差の生配列など、JSON出力には不要で肥大化を招くもの)を
+    取り除いたコピーを返す。"""
+    if d is None:
+        return None
+    return {k: v for k, v in d.items() if not k.startswith("_")}
 
 
 def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
@@ -546,8 +969,8 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
     ext_yield_chg_bp = [(ext_yield_vals[i] - ext_yield_vals[i - 1]) * 100 for i in range(1, len(ext_yield_vals))]
     ext_fx_chg_pct = [(ext_fx_vals[i] / ext_fx_vals[i - 1] - 1) * 100 for i in range(1, len(ext_fx_vals))]
 
-    garch_yield = fit_garch11(ext_yield_chg_bp)
-    garch_fx = fit_garch11(ext_fx_chg_pct)
+    garch_yield = fit_garch11_t(ext_yield_chg_bp)
+    garch_fx = fit_garch11_t(ext_fx_chg_pct)
 
     # IV(インプライドボラティリティ)レジームを実測(ヒストリカル)ボラティリティに反映する。
     # レジーム比の(damping乗根)倍だけ実測ボラティリティを調整することで、
@@ -612,18 +1035,84 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
         usd_value_history.append({"date": d, "value": round(jpy_p / fx_val * 100, 4)})
 
     # 統計モデルのみによる翌取引日のドル建て価値レンジ(平均0、実測ボラティリティ・相関を使用)
-    # d ln(USD建て価値) ≈ -修正デュレーション×Δ利回り(bp)/10000 - ΔFX(%)/100 の分散から90%区間を近似
+    # d ln(USD建て価値) ≈ -修正デュレーション×Δ利回り(bp)/10000 - ΔFX(%)/100 の分散から近似
     c1 = mod_duration / 10000.0
     c2 = 1.0 / 100.0
     var_ln = (c1 ** 2) * (yield_vol_bp ** 2) + (c2 ** 2) * (fx_vol_pct ** 2) \
         + 2 * c1 * c2 * correlation * yield_vol_bp * fx_vol_pct
-    std_ln = math.sqrt(var_ln)
-    range_90_low = round(usd_value_iv_adjusted * math.exp(-1.645 * std_ln), 4)
-    range_90_high = round(usd_value_iv_adjusted * math.exp(1.645 * std_ln), 4)
+    std_ln_linear = math.sqrt(var_ln)
 
-    # Expected Shortfall(95%, 自由度5のt分布解析解)。VaR(パーセンタイル)は「その水準を
-    # 超える確率」のみ示すが、ESは「悪化した場合の期待値」を示す整合的リスク尺度。
-    es_95_low = round(usd_value_iv_adjusted * math.exp(-T5_ES_95_MULTIPLIER * std_ln), 4)
+    # --- ドル建て価値そのもの(利回り×為替の合成リスク)への直接GARCH-tモデル ---
+    # 上記は「修正デュレーション×利回り変化 + 為替変化」という1次近似(線形合成)によって
+    # 利回り・為替それぞれのボラティリティからUSD建て価値の分散を再構成したものだが、
+    # ここでは実際の日次ドル建て価値の変化率そのものにGARCH(1,1)-tを直接あてはめ、
+    # 独立したクロスチェックとしての予測ボラティリティ・自由度ν・標準化残差を得る。
+    ext_usd_values = [
+        bond_dcf_price(yv, JGB_BOND_COUPON_RATE,
+                        (JGB_BOND_MATURITY - date.fromisoformat(d)).days / 365.25)[0] / fxv
+        for d, yv, fxv in zip(extended_dates, ext_yield_vals, ext_fx_vals)
+    ]
+    ext_usd_value_log_ret = [math.log(ext_usd_values[i] / ext_usd_values[i - 1]) for i in range(1, len(ext_usd_values))]
+    garch_direct = fit_garch11_t(ext_usd_value_log_ret)
+
+    # 自由度ν(裾の厚さ)は、これまでの「固定値5」ではなく、上記の直接モデルからデータ駆動で
+    # 推定する。取得に失敗した場合は利回り・為替それぞれの推定値の分散加重平均、
+    # さらにそれも無ければ保守的な既定値5にフォールバックする。
+    if garch_direct and garch_direct.get("nu"):
+        estimated_nu = garch_direct["nu"]
+        nu_source = "usd_value_direct_garch_t"
+    else:
+        nu_y = garch_yield.get("nu") if garch_yield else None
+        nu_f = garch_fx.get("nu") if garch_fx else None
+        candidates = [v for v in (nu_y, nu_f) if v]
+        estimated_nu = round(statistics.mean(candidates), 2) if candidates else 5.0
+        nu_source = "yield_fx_average" if candidates else "fallback_default"
+
+    std_ln_direct = garch_direct["forecast_vol"] if garch_direct else None
+    # 線形合成モデル(デュレーション近似)と直接モデル(実測USD建て価値の時系列)の
+    # 幾何平均で最終的な標準偏差を求め、モデル構造の異なる2つの推定を頑健にブレンドする。
+    std_ln = math.sqrt(std_ln_linear * std_ln_direct) if std_ln_direct else std_ln_linear
+
+    range_q = t_quantile_standard(0.95, estimated_nu)  # 90%区間の上側5%点(自由度ν、正の値)
+    range_90_low = round(usd_value_iv_adjusted * math.exp(-range_q * std_ln), 4)
+    range_90_high = round(usd_value_iv_adjusted * math.exp(range_q * std_ln), 4)
+
+    # --- Expected Shortfall: 3手法によるアンサンブル ---
+    # (1) パラメトリック: データ駆動で推定した自由度νのt分布による解析解
+    # (2) EVT(POT+GPD): 分布全体でなく裾そのものを極値理論で直接モデル化
+    # (3) FHS(Filtered Historical Simulation): 分布形状を一切仮定せず、GARCH標準化残差の
+    #     実測経験分布をそのまま用いるノンパラメトリック手法
+    # 手法によって前提が異なるため、3つのうち最も保守的(=価格が最も下がる)値を採用しつつ、
+    # 全ての結果を透明性のため併記する。
+    es_mult_param = t_expected_shortfall_multiplier(estimated_nu, 0.05)
+    es_param_low = usd_value_iv_adjusted * math.exp(-es_mult_param * std_ln)
+
+    evt_loss_series = [-r for r in ext_usd_value_log_ret]  # 価値の下落(損失)を正の値にする
+    evt_result = evt_tail_risk(evt_loss_series, threshold_quantile=0.90, target_p=0.95)
+    es_evt_low = usd_value_iv_adjusted * math.exp(-evt_result["es"]) if evt_result and evt_result.get("es") else None
+
+    fhs_result = None
+    es_fhs_low = None
+    if garch_direct and garch_direct.get("_standardized_residuals"):
+        fhs_result = fhs_tail_es(garch_direct["_standardized_residuals"], std_ln, alpha=0.05)
+        if fhs_result:
+            es_fhs_low = usd_value_iv_adjusted * math.exp(fhs_result["es_scaled"])
+
+    es_candidates = {"parametric_t": es_param_low, "evt_gpd": es_evt_low, "fhs": es_fhs_low}
+    valid_es = {k: v for k, v in es_candidates.items() if v is not None}
+    ensemble_es_low = round(min(valid_es.values()), 4) if valid_es else round(es_param_low, 4)
+    ensemble_es_method = min(valid_es, key=valid_es.get) if valid_es else "parametric_t"
+
+    # --- バックテスト: ローリングVaR超過率のKupiec比率的中検定 ---
+    # 直近window日間の実測ボラティリティ(モデルの単純化版)から日々VaRを計算し、
+    # 実際の超過頻度が理論値(1-confidence)と統計的に整合しているかを検証する。
+    backtest_result = backtest_var(ext_usd_value_log_ret, window=60, confidence=0.95, nu=estimated_nu)
+
+    # --- テール依存構造の実測診断(コピュラの簡易代替) ---
+    # 線形相関(ピアソン相関)だけでは「同時に大きく悪化する」確率を過小評価しうるため、
+    # 利回り上昇と円安(共にUSD建て価値にとって悪材料)が同時に極端な水準となる
+    # 経験的な同時確率を、正規分布(独立)を仮定した場合の理論値と比較する。
+    tail_dependence = empirical_tail_dependence(ext_yield_chg_bp, ext_fx_chg_pct, q=0.10)
 
     return {
         "jgb_yield_pct": current_yield,
@@ -654,26 +1143,52 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
         "yield_fx_correlation": round(correlation, 3),
         "iv_regime": iv_regime,
         "garch11": {
-            "jgb_yield": garch_yield,
-            "usd_jpy": garch_fx,
-            "note": "GARCH(1,1)(分散ターゲティング法によるMLE, 格子探索で推定)による翌営業日の"
-                    "予測ボラティリティ。過去60営業日の等ウェイト実測値と異なり、ボラティリティ・"
-                    "クラスタリング(荒れ相場の後は荒れが続きやすい性質)を反映できる。"
-                    "最終的な採用ボラティリティ(jgb_yield_daily_vol_bp等)はIV反映値との幾何平均",
+            "jgb_yield": _strip_internal_keys(garch_yield),
+            "usd_jpy": _strip_internal_keys(garch_fx),
+            "usd_value_direct": _strip_internal_keys(garch_direct),
+            "note": "GARCH(1,1)-t(分散ターゲティング法によるMLE, 格子探索+反復プロファイル尤度で"
+                    "自由度νも同時推定)による翌営業日の予測ボラティリティ。過去60営業日の等ウェイト"
+                    "実測値と異なり、ボラティリティ・クラスタリング(荒れ相場の後は荒れが続きやすい性質)を"
+                    "反映できる。usd_value_directは利回り・為替を合成せず、USD建て価値の日次変化率"
+                    "そのものに直接あてはめたクロスチェック用モデル。最終的な採用ボラティリティ"
+                    "(jgb_yield_daily_vol_bp等)はIV反映値との幾何平均",
+        },
+        "degrees_of_freedom": {
+            "estimated_nu": estimated_nu,
+            "source": nu_source,
+            "note": "テール(裾)の厚さを表すt分布の自由度ν。従来は「5」に固定していたが、"
+                    "GARCH標準化残差(ボラティリティ・クラスタリングを除去した純粋なショック)に"
+                    "t分布をMLEであてはめることでデータから直接推定する。νが小さいほど裾が厚い"
+                    "(極端な変動が起きやすい)ことを意味する",
         },
         "statistical_range_90": {
             "low": range_90_low,
             "high": range_90_high,
             "note": "IV反映後の現在価値推定(usd_value_iv_adjusted)を中心に、過去60営業日の実測ボラティリティ・"
-                    "MOVE/VIXのIVレジーム比・GARCH(1,1)予測ボラティリティを組み合わせた統計的な"
+                    "MOVE/VIXのIVレジーム比・GARCH(1,1)-t予測ボラティリティ(線形合成モデルと"
+                    "USD建て価値直接モデルの幾何平均)・データ駆動の自由度νを組み合わせた統計的な"
                     "変動レンジ(個別の材料の方向感は含まない)",
         },
         "expected_shortfall_95": {
-            "low": es_95_low,
+            "low": ensemble_es_low,
+            "method": ensemble_es_method,
+            "components": {
+                "parametric_t": round(es_param_low, 4) if es_param_low else None,
+                "evt_gpd": round(es_evt_low, 4) if es_evt_low else None,
+                "fhs": round(es_fhs_low, 4) if es_fhs_low else None,
+            },
             "note": "下側Expected Shortfall(CVaR, 95%): 起こりうる最悪5%のシナリオに限定した場合の"
-                    "期待値(自由度5のt分布の解析解)。VaR(90%区間の下限)より厳しい、"
-                    "テールリスクを織り込んだ保守的な指標(Basel III/FRTBで採用されている手法)",
+                    "期待値。前提の異なる3手法「パラメトリック(データ駆動の自由度νのt分布解析解)」"
+                    "「EVT(極値理論, POT+一般化パレート分布による裾そのものの直接推定)」"
+                    "「FHS(Filtered Historical Simulation, 分布形状を仮定しないノンパラメトリック"
+                    "手法)」を算出し、最も保守的(価格が最も下がる)な値を採用したアンサンブル。"
+                    "VaR(90%区間の下限)より厳しい、テールリスクを織り込んだ指標"
+                    "(Basel III/FRTBで採用されている手法)",
         },
+        "evt_tail_risk": evt_result,
+        "filtered_historical_simulation": fhs_result,
+        "backtest_var_95": backtest_result,
+        "yield_fx_tail_dependence": tail_dependence,
         "bond_info": {
             "issue": "30年利付国債(第90回)",
             "coupon_rate": JGB_BOND_COUPON_RATE,
