@@ -717,6 +717,8 @@
 
   // t分布(自由度5)の片側97.5%点。90%区間[low, high]からσを逆算する際に使用。
   const T5_CRIT_90 = 2.015;
+  // t分布(自由度5)のExpected Shortfall(95%, 下側)の標準偏差換算倍率(解析解)。
+  const T5_ES_95_MULTIPLIER = 2.8903;
 
   // 等角(アイソメトリック)投影: データ空間(x, y, z)を2Dスクリーン座標へ幾何学的に射影する。
   // x軸・y軸を30度ずつ傾けて奥行きを表現し、z(高さ=確率密度)をそのまま縦方向に加算する。
@@ -761,11 +763,12 @@
     const [low, high] = scenario.usd_value_range_90;
     const sigma = (high - low) / (2 * T5_CRIT_90);
     const current = forecast.current ? (forecast.current.usd_value_iv_adjusted || forecast.current.usd_value_per_10k_face) : null;
+    const es95 = mean - T5_ES_95_MULTIPLIER * sigma;
 
     const width = 320, height = 130, padL = 34, padR = 10, padT = 10, padB = 22;
     const plotW = width - padL - padR, plotH = height - padT - padB;
 
-    const xMin = mean - 4.2 * sigma, xMax = mean + 4.2 * sigma;
+    const xMin = Math.min(mean - 4.2 * sigma, es95 - 0.3 * sigma), xMax = mean + 4.2 * sigma;
     const N = 100;
     const pts = [];
     let maxY = 0;
@@ -792,13 +795,24 @@
 
     const meanX = sx(mean);
     const currentX = current != null ? sx(current) : null;
+    const es95X = sx(es95);
+
+    // 左テール(ES水準より左側)の塗りつぶし: 最悪5%シナリオの領域を視覚化
+    const tailPts = pts.filter(([x]) => x <= es95);
+    let tailPath = "";
+    if (tailPts.length > 1) {
+      tailPath = "M" + tailPts.map(([x, y]) => sx(x).toFixed(1) + "," + sy(y).toFixed(1)).join(" L")
+        + ` L${sx(es95).toFixed(1)},${(padT + plotH).toFixed(1)} L${sx(xMin).toFixed(1)},${(padT + plotH).toFixed(1)} Z`;
+    }
 
     svgEl.innerHTML = `
       <path d="${areaPath}" fill="#34c759" opacity="0.08"></path>
       ${ciPath ? `<path d="${ciPath}" fill="#34c759" opacity="0.22"></path>` : ""}
+      ${tailPath ? `<path d="${tailPath}" fill="#ff453a" opacity="0.35"></path>` : ""}
       <path d="${linePath}" fill="none" stroke="#34c759" stroke-width="2" stroke-linecap="round"></path>
       <line x1="${meanX.toFixed(1)}" y1="${padT}" x2="${meanX.toFixed(1)}" y2="${padT + plotH}" stroke="#ffffff" stroke-width="1.2" stroke-dasharray="3,3"></line>
       ${currentX != null ? `<line x1="${currentX.toFixed(1)}" y1="${padT}" x2="${currentX.toFixed(1)}" y2="${padT + plotH}" stroke="#ffd60a" stroke-width="1.2" stroke-dasharray="1,2"></line>` : ""}
+      <line x1="${es95X.toFixed(1)}" y1="${padT}" x2="${es95X.toFixed(1)}" y2="${padT + plotH}" stroke="#ff453a" stroke-width="1.2" stroke-dasharray="2,2"></line>
       <line x1="${padL}" y1="${padT + plotH}" x2="${width - padR}" y2="${padT + plotH}" stroke="rgba(255,255,255,0.3)" stroke-width="1"></line>
       <text class="dist-axis-label" x="${sx(xMin).toFixed(1)}" y="${height - 6}" text-anchor="start">$${xMin.toFixed(2)}</text>
       <text class="dist-axis-label" x="${sx(xMax).toFixed(1)}" y="${height - 6}" text-anchor="end">$${xMax.toFixed(2)}</text>
@@ -808,6 +822,7 @@
     if (captionEl) {
       captionEl.innerHTML = `${scenario.label}のドル建て価値: 期待値 <strong>$${mean.toFixed(4)}</strong>、`
         + `緑の濃い部分が90%区間 $${low.toFixed(4)} 〜 $${high.toFixed(4)}。`
+        + `赤の網掛け/破線はExpected Shortfall(CVaR, 95%): 最悪5%シナリオの期待値 <strong>$${es95.toFixed(4)}</strong>。`
         + (currentX != null ? `黄の破線は現在値($${current.toFixed(4)})。` : "")
         + `x軸=ドル建て価値、y軸=確率密度(自由度5のt分布)。`;
     }
@@ -1147,9 +1162,25 @@
 
     if (bond.statistical_range_90) {
       items.push([
-        "統計的90%レンジ(翌営業日, IV反映)",
+        "統計的90%レンジ(翌営業日, GARCH×IV反映)",
         "$" + bond.statistical_range_90.low.toFixed(4) + " 〜 $" + bond.statistical_range_90.high.toFixed(4),
       ]);
+    }
+
+    if (bond.expected_shortfall_95) {
+      items.push([
+        "Expected Shortfall(CVaR, 95%)",
+        "$" + bond.expected_shortfall_95.low.toFixed(4) + "以下(最悪5%シナリオの期待値)",
+      ]);
+    }
+
+    if (bond.garch11 && bond.garch11.jgb_yield) {
+      const gy = bond.garch11.jgb_yield;
+      items.push(["GARCH(1,1)予測ボラティリティ(金利)", gy.forecast_vol.toFixed(2) + "bp/日(長期平均" + gy.long_run_vol.toFixed(2) + "bp, 持続度" + gy.persistence.toFixed(2) + ")"]);
+    }
+    if (bond.garch11 && bond.garch11.usd_jpy) {
+      const gf = bond.garch11.usd_jpy;
+      items.push(["GARCH(1,1)予測ボラティリティ(為替)", gf.forecast_vol.toFixed(3) + "%/日(長期平均" + gf.long_run_vol.toFixed(3) + "%, 持続度" + gf.persistence.toFixed(2) + ")"]);
     }
 
     if (bond.iv_regime && bond.iv_regime.move) {
@@ -1234,6 +1265,36 @@
           <div class="signal-bp" style="font-weight:700;">${v >= 0 ? "+" : ""}${v.toFixed(3)}${unit}<br/>±${s.toFixed(3)}${unit}</div>
         `;
         bondForecastSignalsEl.appendChild(row);
+      }
+    }
+
+    if (forecast.garch11) {
+      const g = forecast.garch11;
+      const titleEl = document.createElement("div");
+      titleEl.style.fontWeight = "700";
+      titleEl.style.color = "#fff";
+      titleEl.style.margin = "10px 0 4px 0";
+      titleEl.textContent = "GARCH(1,1)ボラティリティ・クラスタリング";
+      bondForecastSignalsEl.appendChild(titleEl);
+
+      [["jgb_yield", "JGB利回り", "bp"], ["usd_jpy", "USD/JPY", "%"]].forEach(([key, label, unit]) => {
+        const gg = g[key];
+        if (!gg) return;
+        const row = document.createElement("div");
+        row.className = "signal-row";
+        row.innerHTML = `
+          <div class="signal-name">${label}: α=${gg.alpha} β=${gg.beta}(持続度${gg.persistence})</div>
+          <div class="signal-bp">予測${gg.forecast_vol}${unit}<br/>長期平均${gg.long_run_vol}${unit}</div>
+        `;
+        bondForecastSignalsEl.appendChild(row);
+      });
+
+      if (g.note) {
+        const note = document.createElement("div");
+        note.className = "forecast-note";
+        note.style.marginTop = "6px";
+        note.textContent = g.note;
+        bondForecastSignalsEl.appendChild(note);
       }
     }
 
