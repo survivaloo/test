@@ -19,6 +19,13 @@ Mac不要・Apple ID不要・スマホだけで動かせる、経済指標表示
   [CBOE VIX指数](https://www.cboe.com/)(株式オプションIV)をYahoo Finance経由で取得し、
   各指数の「現在値 ÷ 直近1年平均」のレジーム比を実測(ヒストリカル)ボラティリティに
   `regime_ratio^0.5` で反映しています(自動計算の統計的レンジ・手動分析のモンテカルロ両方に適用)。
+- **現在価値推定モデルへのIV反映(コンベクシティ補正)**: 単純なDCF価格は「今日の利回り・
+  為替」を代入した決定論的な値だが、価格は利回りに対して凸(コンベックス)、USD換算は
+  為替に対しても凸なため、ボラティリティが大きいほど期待値は単純DCF価格からズレる
+  (イェンセンの不等式)。USD建て価値 `g(利回り, 為替) = JPY建て価格 / 為替` を2次のテイラー
+  展開し、IVレジーム反映済みのボラティリティと実測相関を用いて
+  `usd_value_iv_adjusted`(コンベクシティ補正込みの現在価値推定)を算出し、単純DCF値
+  (`usd_value_per_10k_face`)と並べて表示しています。
 
 `market-data.json` は `scripts/fetch_market_data.py` を GitHub Actions
 (`.github/workflows/update-market-data.yml`) で毎日自動実行して更新しています。

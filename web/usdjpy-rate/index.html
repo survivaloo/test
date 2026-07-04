@@ -749,8 +749,18 @@
       ["JGB30年利回り", bond.jgb_yield_pct != null ? bond.jgb_yield_pct.toFixed(3) + "%" : "--"],
       ["USD/JPY", bond.usd_jpy != null ? "¥" + bond.usd_jpy.toFixed(2) : "--"],
       ["JPY建て理論価格(DCF)", bond.jgb_jpy_price != null ? "¥" + bond.jgb_jpy_price.toFixed(2) : "--"],
-      ["修正デュレーション", bond.modified_duration != null ? bond.modified_duration.toFixed(2) + "年" : "--"],
+      ["修正デュレーション/コンベクシティ", bond.modified_duration != null
+        ? bond.modified_duration.toFixed(2) + "年 / " + (bond.convexity != null ? bond.convexity.toFixed(3) : "--")
+        : "--"],
     ];
+
+    if (bond.usd_value_iv_adjusted != null) {
+      const adj = bond.iv_present_value_adjustment ? bond.iv_present_value_adjustment.total : null;
+      items.push([
+        "IV反映後の現在価値推定",
+        "$" + bond.usd_value_iv_adjusted.toFixed(4) + (adj != null ? ` (${adj >= 0 ? "+" : ""}${adj.toFixed(4)})` : ""),
+      ]);
+    }
 
     if (bond.statistical_range_90) {
       items.push([
@@ -869,6 +879,16 @@
         note.style.marginTop = "6px";
         note.textContent = iv.note;
         bondForecastSignalsEl.appendChild(note);
+      }
+
+      if (forecast.current && forecast.current.usd_value_iv_adjusted != null) {
+        const pvNote = document.createElement("div");
+        pvNote.className = "forecast-note";
+        pvNote.style.marginTop = "4px";
+        pvNote.textContent = `現在価値推定にもIVを反映: 単純DCF $${forecast.current.usd_value_per_10k_face.toFixed(4)}`
+          + ` → IV反映後 $${forecast.current.usd_value_iv_adjusted.toFixed(4)}`
+          + `(価格の利回り・為替に対する凸性による期待値のズレをコンベクシティ補正)`;
+        bondForecastSignalsEl.appendChild(pvNote);
       }
     }
 

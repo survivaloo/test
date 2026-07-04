@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-04T01:39:49.293313+00:00",
+  "generated_at": "2026-07-04T01:48:08.932294+00:00",
   "jgb_30y": {
     "value": 3.937,
     "date": "2026/7/2",
@@ -479,7 +479,16 @@
     "usd_jpy_date": "2026-07-03",
     "jgb_jpy_price": 95.886,
     "modified_duration": 17.59,
+    "convexity": 0.0426,
     "usd_value_per_10k_face": 59.5011,
+    "usd_value_iv_adjusted": 59.504,
+    "iv_present_value_adjustment": {
+      "total": 0.0029,
+      "yield_convexity_term": 0.0019,
+      "fx_convexity_term": 0.0008,
+      "cross_term": 0.0003,
+      "note": "IV(MOVE指数・VIX指数)反映後のボラティリティを用いて、価格が利回りに対して凸(コンベックス)であること・USD換算が為替に対して凸であることによる期待値のズレ(イェンセンの不等式)を単純DCF価格に加算した現在価値推定への補正額"
+    },
     "history": [
       {
         "date": "2026-02-24",
@@ -840,9 +849,9 @@
       }
     },
     "statistical_range_90": {
-      "low": 58.7006,
-      "high": 60.3125,
-      "note": "過去60営業日の実測ボラティリティを、MOVE指数・VIX指数から算出したIV(インプライドボラティリティ)レジーム比で調整した上での統計的な変動レンジ(個別の材料の方向感は含まない)"
+      "low": 58.7034,
+      "high": 60.3155,
+      "note": "IV反映後の現在価値推定(usd_value_iv_adjusted)を中心に、過去60営業日の実測ボラティリティをMOVE指数・VIX指数のIVレジーム比で調整した上での統計的な変動レンジ(個別の材料の方向感は含まない)"
     },
     "bond_info": {
       "issue": "30年利付国債(第90回)",
@@ -855,12 +864,14 @@
   "jgb_30y_bond_usd_forecast": {
     "analysis_date": "2026-07-04",
     "analysis_date_label": "2026年7月4日",
-    "method": "ベイズ統計(逆分散加重)×IVレジーム調整×モンテカルロ(2変量t分布, 20万回試行) + DCF現在価値モデル",
+    "method": "ベイズ統計(逆分散加重)×IVレジーム調整×コンベクシティ補正×モンテカルロ(2変量t分布, 20万回試行) + DCF現在価値モデル",
     "current": {
       "jgb_yield_pct": 3.937,
       "usd_jpy": 161.15,
       "jgb_jpy_price": 95.886,
-      "usd_value_per_10k_face": 59.5011
+      "usd_value_per_10k_face": 59.5011,
+      "usd_value_iv_adjusted": 59.504,
+      "note": "usd_value_per_10k_faceは単純DCF価格、usd_value_iv_adjustedはIV反映後のコンベクシティ補正込みの現在価値推定(差は+0.0029、コンベクシティ効果は現状のボラティリティ水準では僅少)"
     },
     "iv_regime": {
       "move": {

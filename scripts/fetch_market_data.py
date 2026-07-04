@@ -44,15 +44,23 @@ JGB_BOND_MATURITY = date(2056, 3, 20)
 #       さらにMOVE指数(米国債IV)・VIX指数(株式IV)から算出したIV(インプライド
 #       ボラティリティ)レジーム比を、事後分布の標準偏差に反映(damping指数0.5)した上で、
 #       実測相関(ρ)を用いた2変量t分布(自由度5)で20万回のモンテカルロシミュレーションを実施。
+#       現在価値そのもの(単純DCF)についても、価格が利回り・為替に対して凸(コンベックス)
+#       であることによる期待値のズレ(イェンセンの不等式)をIV反映後のσで補正
+#       (usd_value_iv_adjusted)している。
 BAYESIAN_FORECAST_SNAPSHOT = {
     "analysis_date": "2026-07-04",
     "analysis_date_label": "2026年7月4日",
-    "method": "ベイズ統計(逆分散加重)×IVレジーム調整×モンテカルロ(2変量t分布, 20万回試行) + DCF現在価値モデル",
+    "method": "ベイズ統計(逆分散加重)×IVレジーム調整×コンベクシティ補正×モンテカルロ"
+              "(2変量t分布, 20万回試行) + DCF現在価値モデル",
     "current": {
         "jgb_yield_pct": 3.937,
         "usd_jpy": 161.15,
         "jgb_jpy_price": 95.886,
         "usd_value_per_10k_face": 59.5011,
+        "usd_value_iv_adjusted": 59.504,
+        "note": "usd_value_per_10k_faceは単純DCF価格、usd_value_iv_adjustedはIV反映後の"
+                "コンベクシティ補正込みの現在価値推定(差は+0.0029、コンベクシティ効果は"
+                "現状のボラティリティ水準では僅少)",
     },
     "iv_regime": {
         "move": {"current": 66.79, "avg_1y": 75.00, "regime_ratio": 0.8905,
@@ -267,6 +275,18 @@ def bond_dcf_price(yield_pct: float, coupon_rate: float, years: float, face: flo
     return round(price, 4), round(modified_duration, 2)
 
 
+def bond_price_curvature(yield_pct: float, coupon_rate: float, years: float, h: float = 0.1):
+    """DCF価格の利回りに対する1階・2階微分(コンベクシティ)を中心差分で数値的に求める。
+    戻り値は(価格, dP/d利回り(%), d²P/d利回り(%)²)。単位は「利回りをyield_pctと同じ%表記で
+    動かした場合」のスケール。"""
+    price0, _ = bond_dcf_price(yield_pct, coupon_rate, years)
+    price_up, _ = bond_dcf_price(yield_pct + h, coupon_rate, years)
+    price_down, _ = bond_dcf_price(yield_pct - h, coupon_rate, years)
+    dprice = (price_up - price_down) / (2 * h)
+    d2price = (price_up - 2 * price0 + price_down) / (h ** 2)
+    return price0, dprice, d2price
+
+
 def fetch_jgb_yield_history():
     """財務省の履歴CSV(1974〜)からJGB30年利回りの日次系列を取得する。"""
     raw = fetch_url(JGB_HISTORICAL_CSV_URL).decode("shift_jis", errors="replace")
@@ -427,6 +447,23 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
     jpy_price, mod_duration = bond_dcf_price(current_yield, JGB_BOND_COUPON_RATE, years_to_maturity)
     usd_value_per_10k_face = round(jpy_price / latest_fx * 100, 4)
 
+    # --- 現在価値推定モデルへのIV(インプライドボラティリティ)反映 ---
+    # 単純なDCF価格は「今日の利回り・為替」を代入した決定論的な値だが、
+    # 価格(P)は利回りに対して凸(コンベックス)、ドル換算(P/FX)はFXに対しても凸なため、
+    # 分散(=ボラティリティ)が大きいほど期待値は単純DCF価格からズレる(イェンセンの不等式)。
+    # そこでUSD建て価値 g(y,FX)=P(y)/FX を(y0, FX0)まわりで2次のテイラー展開し、
+    # IVレジーム反映済みのσ(yield_vol_bp, fx_vol_pct)と実測相関ρを用いて期待値を補正する。
+    #   E[g] ≈ g0 + 0.5*g_yy*Var(Δy) + 0.5*g_xx*Var(ΔFX) + g_yx*Cov(Δy,ΔFX)
+    _, dprice_dy, d2price_dy2 = bond_price_curvature(current_yield, JGB_BOND_COUPON_RATE, years_to_maturity)
+    sigma_y_pct = yield_vol_bp / 100.0  # bp→パーセンテージポイント
+    sigma_x_frac = fx_vol_pct / 100.0   # %→比率
+
+    convexity_term = 0.5 * d2price_dy2 * (sigma_y_pct ** 2) / latest_fx * 100
+    fx_convexity_term = jpy_price * (sigma_x_frac ** 2) / latest_fx * 100
+    cross_term = -dprice_dy * correlation * sigma_y_pct * sigma_x_frac / latest_fx * 100
+    iv_pv_adjustment = convexity_term + fx_convexity_term + cross_term
+    usd_value_iv_adjusted = round(usd_value_per_10k_face + iv_pv_adjustment, 4)
+
     # ドル建て価値の時系列(グラフ表示用)。満期までの残存年数はほぼ一定とみなし、
     # 各日のJGB利回りとUSD/JPYからその日時点のドル建て価値を再計算する。
     chart_dates = sorted(set(yield_map) & set(fx_map))[-90:]
@@ -446,8 +483,8 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
     var_ln = (c1 ** 2) * (yield_vol_bp ** 2) + (c2 ** 2) * (fx_vol_pct ** 2) \
         + 2 * c1 * c2 * correlation * yield_vol_bp * fx_vol_pct
     std_ln = math.sqrt(var_ln)
-    range_90_low = round(usd_value_per_10k_face * math.exp(-1.645 * std_ln), 4)
-    range_90_high = round(usd_value_per_10k_face * math.exp(1.645 * std_ln), 4)
+    range_90_low = round(usd_value_iv_adjusted * math.exp(-1.645 * std_ln), 4)
+    range_90_high = round(usd_value_iv_adjusted * math.exp(1.645 * std_ln), 4)
 
     return {
         "jgb_yield_pct": current_yield,
@@ -456,7 +493,18 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
         "usd_jpy_date": latest_fx_date,
         "jgb_jpy_price": jpy_price,
         "modified_duration": mod_duration,
+        "convexity": round(d2price_dy2 / jpy_price, 4),
         "usd_value_per_10k_face": usd_value_per_10k_face,
+        "usd_value_iv_adjusted": usd_value_iv_adjusted,
+        "iv_present_value_adjustment": {
+            "total": round(iv_pv_adjustment, 4),
+            "yield_convexity_term": round(convexity_term, 4),
+            "fx_convexity_term": round(fx_convexity_term, 4),
+            "cross_term": round(cross_term, 4),
+            "note": "IV(MOVE指数・VIX指数)反映後のボラティリティを用いて、価格が利回りに対して凸(コンベックス)"
+                    "であること・USD換算が為替に対して凸であることによる期待値のズレ(イェンセンの不等式)を"
+                    "単純DCF価格に加算した現在価値推定への補正額",
+        },
         "history": usd_value_history,
         "jgb_yield_daily_vol_bp": round(yield_vol_bp, 3),
         "jgb_yield_daily_vol_bp_realized": round(yield_vol_bp_realized, 3),
@@ -467,8 +515,8 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
         "statistical_range_90": {
             "low": range_90_low,
             "high": range_90_high,
-            "note": "過去60営業日の実測ボラティリティを、MOVE指数・VIX指数から算出したIV(インプライドボラティリティ)"
-                    "レジーム比で調整した上での統計的な変動レンジ(個別の材料の方向感は含まない)",
+            "note": "IV反映後の現在価値推定(usd_value_iv_adjusted)を中心に、過去60営業日の実測ボラティリティを"
+                    "MOVE指数・VIX指数のIVレジーム比で調整した上での統計的な変動レンジ(個別の材料の方向感は含まない)",
         },
         "bond_info": {
             "issue": "30年利付国債(第90回)",
