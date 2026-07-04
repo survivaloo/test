@@ -389,35 +389,43 @@
     border-top: none;
   }
 
-  .dist-badge {
-    display: inline-block;
-    font-size: 10.5px;
-    font-weight: 800;
-    color: #0b2d4e;
-    background: #ffffff;
-    border-radius: 6px;
-    padding: 1px 6px;
-    margin-right: 6px;
-    letter-spacing: 0.02em;
-  }
-
-  .dist-title {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 6px;
-  }
-
-  svg.dist-svg {
-    width: 100%;
-    height: 130px;
-    display: block;
-  }
-
   svg.dist-svg-square {
     width: 100%;
-    height: 230px;
+    height: 260px;
     display: block;
+  }
+
+  .dist-rotate-wrap {
+    position: relative;
+  }
+
+  svg.dist-svg-rotatable {
+    cursor: grab;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  svg.dist-svg-rotatable:active {
+    cursor: grabbing;
+  }
+
+  .dist-reset-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 8px;
+    padding: 3px 8px;
+    cursor: pointer;
+  }
+
+  .dist-reset-btn:active {
+    background: rgba(255, 255, 255, 0.22);
   }
 
   .dist-caption {
@@ -504,24 +512,14 @@
     </div>
 
     <div id="bondForecastDistCard" class="card bond-card" style="display:none;">
-      <div class="metric-label" style="text-align:center;">確率分布の可視化</div>
-      <div class="metric-sub-label" style="text-align:center;">幾何射影による2D/3D/4D表現(モデル: 自由度5の t分布)</div>
+      <div class="metric-label" style="text-align:center;">時間発展する確率分布(色=密度)</div>
+      <div class="metric-sub-label" style="text-align:center;">モデル: 自由度5の t分布 / ドラッグまたはスワイプで自由に回転</div>
 
       <div class="dist-section">
-        <div class="dist-title"><span class="dist-badge">2D</span>ドル建て価値の確率密度分布</div>
-        <svg id="pdf2dChart" class="dist-svg" viewBox="0 0 320 130" preserveAspectRatio="none"></svg>
-        <div id="pdf2dCaption" class="dist-caption"></div>
-      </div>
-
-      <div class="dist-section">
-        <div class="dist-title"><span class="dist-badge">3D</span>利回り変化×為替変化の同時確率密度</div>
-        <svg id="joint3dChart" class="dist-svg-square" viewBox="0 0 320 230"></svg>
-        <div id="joint3dCaption" class="dist-caption"></div>
-      </div>
-
-      <div class="dist-section">
-        <div class="dist-title"><span class="dist-badge">4D</span>時間発展する確率分布(色=密度)</div>
-        <svg id="evo4dChart" class="dist-svg-square" viewBox="0 0 320 230"></svg>
+        <div class="dist-rotate-wrap">
+          <svg id="evo4dChart" class="dist-svg-square dist-svg-rotatable" viewBox="0 0 320 260"></svg>
+          <button id="evo4dResetBtn" type="button" class="dist-reset-btn" title="視点をリセット">⟲ リセット</button>
+        </div>
         <div id="evo4dCaption" class="dist-caption"></div>
       </div>
     </div>
@@ -595,12 +593,9 @@
   const bondForecastCaveatsEl = document.getElementById("bondForecastCaveats");
 
   const bondForecastDistCardEl = document.getElementById("bondForecastDistCard");
-  const pdf2dChartEl = document.getElementById("pdf2dChart");
-  const pdf2dCaptionEl = document.getElementById("pdf2dCaption");
-  const joint3dChartEl = document.getElementById("joint3dChart");
-  const joint3dCaptionEl = document.getElementById("joint3dCaption");
   const evo4dChartEl = document.getElementById("evo4dChart");
   const evo4dCaptionEl = document.getElementById("evo4dCaption");
+  const evo4dResetBtnEl = document.getElementById("evo4dResetBtn");
 
   const refreshBtn = document.getElementById("refreshBtn");
   const refreshIcon = refreshBtn.querySelector(".refresh-icon");
@@ -691,9 +686,11 @@
     el.innerHTML = `<span>${labels[0]}</span><span>${labels[labels.length - 1]}</span>`;
   }
 
-  // ==== 確率分布の可視化(2D/3D/4D)========================================
+  // ==== 時間発展する確率分布の可視化(自由回転3D) ==========================
   // モデルはJGB利回り変化・USD/JPY変化を自由度5の(ロケーション・スケール)t分布で
   // 扱っているため、可視化も正規分布ではなくt分布の確率密度関数(PDF)で行う。
+  // ドラッグ操作でトラックボール風に方位角・仰角を自由に変えられる、正投影による
+  // 汎用3D回転を実装している(外部3Dライブラリへの依存なし)。
 
   const T_DF = 5;
   // Γ((ν+1)/2) / (√(νπ)·Γ(ν/2)) の ν=5 での値(1変量t分布のピーク定数)
@@ -704,32 +701,10 @@
     return (T_UNIVAR_CONST / sigma) * Math.pow(1 + (z * z) / T_DF, -(T_DF + 1) / 2);
   }
 
-  // 2変量t分布は自由度によらず正規化定数が 1/(2π·σx·σy·√(1-ρ²)) になる
-  // (Γ((ν+2)/2)/Γ(ν/2) = ν/2 であるため)。
-  function bivariateTPdf(x, y, sigmaX, sigmaY, rho) {
-    const zx = x / sigmaX;
-    const zy = y / sigmaY;
-    const omr2 = Math.max(1 - rho * rho, 1e-6);
-    const q = (zx * zx - 2 * rho * zx * zy + zy * zy) / omr2;
-    const norm = 1 / (2 * Math.PI * sigmaX * sigmaY * Math.sqrt(omr2));
-    return norm * Math.pow(1 + q / T_DF, -(T_DF + 2) / 2);
-  }
-
   // t分布(自由度5)の片側97.5%点。90%区間[low, high]からσを逆算する際に使用。
   const T5_CRIT_90 = 2.015;
-  // t分布(自由度5)のExpected Shortfall(95%, 下側)の標準偏差換算倍率(解析解)。
-  const T5_ES_95_MULTIPLIER = 2.8903;
 
-  // 等角(アイソメトリック)投影: データ空間(x, y, z)を2Dスクリーン座標へ幾何学的に射影する。
-  // x軸・y軸を30度ずつ傾けて奥行きを表現し、z(高さ=確率密度)をそのまま縦方向に加算する。
-  function isoProject(x, y, z, cx, cy, scale, zScale) {
-    const angle = Math.PI / 6; // 30度
-    const sx = cx + (x - y) * Math.cos(angle) * scale;
-    const sy = cy + (x + y) * Math.sin(angle) * scale - z * zScale;
-    return [sx, sy];
-  }
-
-  // 密度(0〜1に正規化)を寒色→暖色のヒートカラーへ変換する(4Dチャートの「色」次元用)。
+  // 密度(0〜1に正規化)を寒色→暖色のヒートカラーへ変換する(「色=密度」の次元)。
   function densityToColor(t) {
     const clamped = Math.max(0, Math.min(1, t));
     const stops = [
@@ -752,186 +727,62 @@
     return "rgb(255,107,107)";
   }
 
-  // --- 2D: ドル建て価値の確率密度曲線(自由度5のt分布) ---
-  function renderPdf2D(svgEl, captionEl, forecast) {
-    if (!svgEl) return;
-    const scenarioList = forecast.scenarios || [];
-    const scenario = scenarioList[scenarioList.length - 1];
-    if (!scenario) { svgEl.innerHTML = ""; return; }
-
-    const mean = scenario.usd_value_expected;
-    const [low, high] = scenario.usd_value_range_90;
-    const sigma = (high - low) / (2 * T5_CRIT_90);
-    const current = forecast.current ? (forecast.current.usd_value_iv_adjusted || forecast.current.usd_value_per_10k_face) : null;
-    const es95 = mean - T5_ES_95_MULTIPLIER * sigma;
-
-    const width = 320, height = 130, padL = 34, padR = 10, padT = 10, padB = 22;
-    const plotW = width - padL - padR, plotH = height - padT - padB;
-
-    const xMin = Math.min(mean - 4.2 * sigma, es95 - 0.3 * sigma), xMax = mean + 4.2 * sigma;
-    const N = 100;
-    const pts = [];
-    let maxY = 0;
-    for (let i = 0; i <= N; i++) {
-      const x = xMin + (xMax - xMin) * (i / N);
-      const y = tPdf(x, mean, sigma);
-      pts.push([x, y]);
-      if (y > maxY) maxY = y;
-    }
-
-    const sx = (x) => padL + ((x - xMin) / (xMax - xMin)) * plotW;
-    const sy = (y) => padT + plotH * (1 - y / maxY);
-
-    const linePath = pts.map(([x, y], i) => (i === 0 ? "M" : "L") + sx(x).toFixed(1) + "," + sy(y).toFixed(1)).join(" ");
-    const areaPath = linePath + ` L${sx(xMax).toFixed(1)},${padT + plotH} L${sx(xMin).toFixed(1)},${padT + plotH} Z`;
-
-    // 90%区間の塗りつぶし
-    const ciPts = pts.filter(([x]) => x >= low && x <= high);
-    let ciPath = "";
-    if (ciPts.length > 1) {
-      ciPath = "M" + ciPts.map(([x, y]) => sx(x).toFixed(1) + "," + sy(y).toFixed(1)).join(" L")
-        + ` L${sx(high).toFixed(1)},${(padT + plotH).toFixed(1)} L${sx(low).toFixed(1)},${(padT + plotH).toFixed(1)} Z`;
-    }
-
-    const meanX = sx(mean);
-    const currentX = current != null ? sx(current) : null;
-    const es95X = sx(es95);
-
-    // 左テール(ES水準より左側)の塗りつぶし: 最悪5%シナリオの領域を視覚化
-    const tailPts = pts.filter(([x]) => x <= es95);
-    let tailPath = "";
-    if (tailPts.length > 1) {
-      tailPath = "M" + tailPts.map(([x, y]) => sx(x).toFixed(1) + "," + sy(y).toFixed(1)).join(" L")
-        + ` L${sx(es95).toFixed(1)},${(padT + plotH).toFixed(1)} L${sx(xMin).toFixed(1)},${(padT + plotH).toFixed(1)} Z`;
-    }
-
-    svgEl.innerHTML = `
-      <path d="${areaPath}" fill="#34c759" opacity="0.08"></path>
-      ${ciPath ? `<path d="${ciPath}" fill="#34c759" opacity="0.22"></path>` : ""}
-      ${tailPath ? `<path d="${tailPath}" fill="#ff453a" opacity="0.35"></path>` : ""}
-      <path d="${linePath}" fill="none" stroke="#34c759" stroke-width="2" stroke-linecap="round"></path>
-      <line x1="${meanX.toFixed(1)}" y1="${padT}" x2="${meanX.toFixed(1)}" y2="${padT + plotH}" stroke="#ffffff" stroke-width="1.2" stroke-dasharray="3,3"></line>
-      ${currentX != null ? `<line x1="${currentX.toFixed(1)}" y1="${padT}" x2="${currentX.toFixed(1)}" y2="${padT + plotH}" stroke="#ffd60a" stroke-width="1.2" stroke-dasharray="1,2"></line>` : ""}
-      <line x1="${es95X.toFixed(1)}" y1="${padT}" x2="${es95X.toFixed(1)}" y2="${padT + plotH}" stroke="#ff453a" stroke-width="1.2" stroke-dasharray="2,2"></line>
-      <line x1="${padL}" y1="${padT + plotH}" x2="${width - padR}" y2="${padT + plotH}" stroke="rgba(255,255,255,0.3)" stroke-width="1"></line>
-      <text class="dist-axis-label" x="${sx(xMin).toFixed(1)}" y="${height - 6}" text-anchor="start">$${xMin.toFixed(2)}</text>
-      <text class="dist-axis-label" x="${sx(xMax).toFixed(1)}" y="${height - 6}" text-anchor="end">$${xMax.toFixed(2)}</text>
-      <text class="dist-axis-label" x="${meanX.toFixed(1)}" y="${padT + 10}" text-anchor="middle" fill="#ffffff">期待値</text>
-    `;
-
-    if (captionEl) {
-      captionEl.innerHTML = `${scenario.label}のドル建て価値: 期待値 <strong>$${mean.toFixed(4)}</strong>、`
-        + `緑の濃い部分が90%区間 $${low.toFixed(4)} 〜 $${high.toFixed(4)}。`
-        + `赤の網掛け/破線はExpected Shortfall(CVaR, 95%): 最悪5%シナリオの期待値 <strong>$${es95.toFixed(4)}</strong>。`
-        + (currentX != null ? `黄の破線は現在値($${current.toFixed(4)})。` : "")
-        + `x軸=ドル建て価値、y軸=確率密度(自由度5のt分布)。`;
-    }
+  // 汎用3D回転+正投影(トラックボール/オービットカメラ方式)。
+  // データ空間の3軸: x=ドル建て価値、depth=時間(奥行き)、h=確率密度(高さ)。
+  // 1) 方位角theta(垂直軸まわりの回転, 左右ドラッグ)で x-depth 平面を回転
+  // 2) 仰角phiで(1)の結果の depth-h 平面をさらに回転(上下ドラッグ、見下ろし/見上げ)
+  // 3) depth軸(回転後)を捨てて正投影 → スクリーン座標。回転後のdepth値は
+  //    ペインターズアルゴリズム(奥から手前へ描画)による隠面処理の並べ替えキーとして使う。
+  function rotateProject(x, depth, h, theta, phi, cx, cy, scale, zScale) {
+    const cosT = Math.cos(theta), sinT = Math.sin(theta);
+    const x1 = x * cosT - depth * sinT;
+    const y1 = x * sinT + depth * cosT;
+    const cosP = Math.cos(phi), sinP = Math.sin(phi);
+    const depthAfter = y1 * cosP - h * sinP;
+    const hAfter = y1 * sinP + h * cosP;
+    return [cx + x1 * scale, cy - hAfter * zScale, depthAfter];
   }
 
-  // --- 3D: 利回り変化×為替変化の同時確率密度(等角投影ワイヤーフレーム) ---
-  function renderJoint3D(svgEl, captionEl, forecast) {
-    if (!svgEl) return;
-    const py = forecast.posterior_jgb_yield, pf = forecast.posterior_fx;
-    if (!py || !pf) { svgEl.innerHTML = ""; return; }
-    const rho = forecast.correlation || 0;
+  // 視点(方位角・仰角)の状態。既定値は元の等角投影に近い見た目になるよう調整。
+  const evo4dView = { theta: Math.PI / 4, phi: 0.62 };
+  const EVO4D_DEFAULT_VIEW = { theta: Math.PI / 4, phi: 0.62 };
+  const EVO4D_PHI_MIN = -1.45, EVO4D_PHI_MAX = 1.45;
+  let lastForecastForDist = null;
 
-    const width = 320, height = 230;
-    const cx = width / 2, cy = height / 2 + 55;
-    const scale = 16, zScale = 55;
-
-    const GRID = 14;
-    const range = 3.2; // ±3.2 標準偏差
-    const rows = [];
-    let maxZ = 0;
-    for (let j = 0; j <= GRID; j++) {
-      const gy = -range + (2 * range) * (j / GRID);
-      const row = [];
-      for (let i = 0; i <= GRID; i++) {
-        const gx = -range + (2 * range) * (i / GRID);
-        const z = bivariateTPdf(gx, gy, 1, 1, rho);
-        if (z > maxZ) maxZ = z;
-        row.push([gx, gy, z]);
-      }
-      rows.push(row);
-    }
-
-    const proj = (gx, gy, z) => isoProject(gx, gy, (z / maxZ) * 2.6, cx, cy, scale, zScale);
-
-    let linesHtml = "";
-    // 奥(y負)から手前(y正)へ描画(ペインターズアルゴリズムで簡易的に奥行きを表現)
-    rows.forEach((row) => {
-      const path = row.map(([gx, gy, z], i) => {
-        const [sx, sy] = proj(gx, gy, z);
-        return (i === 0 ? "M" : "L") + sx.toFixed(1) + "," + sy.toFixed(1);
-      }).join(" ");
-      const peakZ = Math.max(...row.map((p) => p[2])) / maxZ;
-      linesHtml += `<path d="${path}" fill="none" stroke="${densityToColor(peakZ)}" stroke-width="1" opacity="0.55"></path>`;
-    });
-    for (let i = 0; i <= GRID; i++) {
-      const path = rows.map((row) => {
-        const [gx, gy, z] = row[i];
-        const [sx, sy] = proj(gx, gy, z);
-        return [sx, sy];
-      });
-      const d = path.map(([sx, sy], k) => (k === 0 ? "M" : "L") + sx.toFixed(1) + "," + sy.toFixed(1)).join(" ");
-      linesHtml += `<path d="${d}" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="0.6"></path>`;
-    }
-
-    // 軸(利回り軸・為替軸・原点)
-    const axisEnds = [
-      isoProject(-range, 0, 0, cx, cy, scale, zScale),
-      isoProject(range, 0, 0, cx, cy, scale, zScale),
-      isoProject(0, -range, 0, cx, cy, scale, zScale),
-      isoProject(0, range, 0, cx, cy, scale, zScale),
-    ];
-    const origin = isoProject(0, 0, 0, cx, cy, scale, zScale);
-    const peakPoint = isoProject(0, 0, 2.6, cx, cy, scale, zScale);
-
-    svgEl.innerHTML = `
-      <line x1="${axisEnds[0][0].toFixed(1)}" y1="${axisEnds[0][1].toFixed(1)}" x2="${axisEnds[1][0].toFixed(1)}" y2="${axisEnds[1][1].toFixed(1)}" stroke="rgba(255,255,255,0.4)" stroke-width="1"></line>
-      <line x1="${axisEnds[2][0].toFixed(1)}" y1="${axisEnds[2][1].toFixed(1)}" x2="${axisEnds[3][0].toFixed(1)}" y2="${axisEnds[3][1].toFixed(1)}" stroke="rgba(255,255,255,0.4)" stroke-width="1"></line>
-      ${linesHtml}
-      <circle cx="${origin[0].toFixed(1)}" cy="${origin[1].toFixed(1)}" r="2.5" fill="#ffd60a"></circle>
-      <text class="dist-axis-label" x="${axisEnds[1][0].toFixed(1)}" y="${(axisEnds[1][1] + 12).toFixed(1)}" text-anchor="middle">Δ利回り(bp)</text>
-      <text class="dist-axis-label" x="${axisEnds[3][0].toFixed(1)}" y="${(axisEnds[3][1] + 12).toFixed(1)}" text-anchor="middle">ΔUSD/JPY(%)</text>
-      <text class="dist-axis-label" x="${peakPoint[0].toFixed(1)}" y="${(peakPoint[1] - 4).toFixed(1)}" text-anchor="middle" fill="#ffffff">密度ピーク</text>
-    `;
-
-    if (captionEl) {
-      captionEl.innerHTML = `JGB利回り変化(σ=${py.std_bp.toFixed(2)}bp)とUSD/JPY変化(σ=${pf.std_pct.toFixed(3)}%)の`
-        + `同時確率密度を、等角投影(30度)でワイヤーフレーム表示。相関 ρ=${rho.toFixed(3)}により`
-        + `分布の山が斜めに傾いている(色は密度の高さ: 青→緑→黄→赤の順に高い)。`;
-    }
-  }
-
-  // --- 4D: 時間発展する確率分布(x=価値, y(奥行き)=時間, z=密度, 色=密度) ---
+  // --- 時間発展する確率分布(x=価値, depth=時間, h=密度, 色=密度) ---
   function renderEvo4D(svgEl, captionEl, forecast) {
     if (!svgEl) return;
     const scenarios = forecast.scenarios || [];
     if (!scenarios.length) { svgEl.innerHTML = ""; return; }
     const current = forecast.current ? (forecast.current.usd_value_iv_adjusted || forecast.current.usd_value_per_10k_face) : null;
 
-    const width = 320, height = 230;
-    const cx = width / 2, cy = 130;
-    const scale = 24, zScale = 80, heightFactor = 1.5;
+    const width = 320, height = 260;
+    // ラベル文字がはみ出さないよう、描画領域の周囲にマージンを確保する。
+    const marginX = 30, marginTop = 16, marginBottom = 36;
+    const availW = width - marginX * 2;
+    const availH = height - marginTop - marginBottom;
+    const baseScale = 24, baseZScale = 78, heightFactor = 1.5;
+    const { theta, phi } = evo4dView;
 
     const allVals = scenarios.map((s) => s.usd_value_expected).concat(current != null ? [current] : []);
     const vMin = Math.min(...scenarios.map((s) => s.usd_value_range_90[0]), ...allVals) - 0.02;
     const vMax = Math.max(...scenarios.map((s) => s.usd_value_range_90[1]), ...allVals) + 0.02;
 
-    // 時間軸(奥行きy): 0=現在, 1..N=各シナリオ
-    const timeSteps = [{ label: "現在", value: current, sigma: null }].concat(
+    // 時間軸(奥行き): 0=現在, 1..N=各シナリオ。中央を0に揃え、回転の軸が中心を通るようにする。
+    const rawSteps = [{ label: "現在", value: current, sigma: null }].concat(
       scenarios.map((s) => {
         const [low, high] = s.usd_value_range_90;
         return { label: s.label.split("(")[0], value: s.usd_value_expected, sigma: (high - low) / (2 * T5_CRIT_90) };
       })
     );
+    const depthCenter = (rawSteps.length - 1) / 2;
 
     const xNorm = (v) => ((v - vMin) / (vMax - vMin) - 0.5) * 4.4; // -2.2〜2.2 のデータ空間へ正規化
     // リッジライン式に各時点(時間断面)ごとに自身の最大密度で正規化する(σが大きく異なる
     // シナリオ同士でも高さを比較しやすくするため。ジョイプロット/リッジラインプロットの定石)。
-    const curves = timeSteps.map((step, ti) => {
-      if (step.sigma == null) return { ti, isSpike: true, x: xNorm(step.value), label: step.label };
+    const curves = rawSteps.map((step, ti) => {
+      const depth = ti - depthCenter;
+      if (step.sigma == null) return { depth, isSpike: true, x: xNorm(step.value), label: step.label };
       const pts = [];
       const N = 60;
       let localMax = 0;
@@ -941,49 +792,91 @@
         if (z > localMax) localMax = z;
         pts.push([xNorm(v), z]);
       }
-      return { ti, isSpike: false, pts, label: step.label, localMax };
+      return { depth, isSpike: false, pts, label: step.label, localMax };
     });
 
-    const projPt = (x, ti, zNorm) => isoProject(x, ti, zNorm * heightFactor, cx, cy, scale, zScale);
-
-    let html = "";
-    // 軸線(時間の奥行き方向)
-    const depthStart = projPt(0, 0, 0);
-    const depthEnd = projPt(0, timeSteps.length - 1, 0);
-    html += `<line x1="${depthStart[0].toFixed(1)}" y1="${depthStart[1].toFixed(1)}" x2="${depthEnd[0].toFixed(1)}" y2="${depthEnd[1].toFixed(1)}" stroke="rgba(255,255,255,0.3)" stroke-width="1"></line>`;
-
+    // 自由回転時にもチャート全体が枠内に収まるよう、まず基準スケールで全点を仮投影して
+    // 外接矩形を求め、それに合わせてスケール・中心をその都度自動調整する(オービットカメラの
+    // オートフィットに相当)。
+    const rawProj = (x, depth, hNorm) => rotateProject(x, depth, hNorm * heightFactor, theta, phi, 0, 0, baseScale, baseZScale);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    const extend = (p) => {
+      if (p[0] < minX) minX = p[0];
+      if (p[0] > maxX) maxX = p[0];
+      if (p[1] < minY) minY = p[1];
+      if (p[1] > maxY) maxY = p[1];
+    };
     curves.forEach((c) => {
       if (c.isSpike) {
-        const [bx, by] = projPt(c.x, c.ti, 0);
-        const [tx, ty] = projPt(c.x, c.ti, 1.15);
+        extend(rawProj(c.x, c.depth, 0));
+        extend(rawProj(c.x, c.depth, 1.15));
+      } else {
+        c.pts.forEach(([x0, z0]) => {
+          extend(rawProj(x0, c.depth, 0));
+          extend(rawProj(x0, c.depth, z0 / c.localMax));
+        });
+      }
+    });
+    const contentW = Math.max(1e-6, maxX - minX);
+    const contentH = Math.max(1e-6, maxY - minY);
+    const fitScale = Math.min(1, availW / contentW, availH / contentH);
+    const scale = baseScale * fitScale, zScale = baseZScale * fitScale;
+    const cx = width / 2 - ((minX + maxX) / 2) * fitScale;
+    const cy = marginTop + availH / 2 - ((minY + maxY) / 2) * fitScale;
+
+    const proj = (x, depth, hNorm) => rotateProject(x, depth, hNorm * heightFactor, theta, phi, cx, cy, scale, zScale);
+
+    // 各カーブの代表点(中央・高さ0)の回転後depthで奥行きソートし、遠い順(painter's algorithm)に描画する。
+    const drawables = curves.map((c) => {
+      const [, , d] = proj(c.isSpike ? c.x : 0, c.depth, 0);
+      return { c, sortDepth: d };
+    }).sort((a, b) => b.sortDepth - a.sortDepth);
+
+    let html = "";
+    // 奥行き軸のガイド線(時間の推移を示す基準線)
+    const depthValues = curves.map((c) => c.depth);
+    const axisStart = proj(0, Math.min(...depthValues), 0);
+    const axisEnd = proj(0, Math.max(...depthValues), 0);
+    html += `<line x1="${axisStart[0].toFixed(1)}" y1="${axisStart[1].toFixed(1)}" x2="${axisEnd[0].toFixed(1)}" y2="${axisEnd[1].toFixed(1)}" stroke="rgba(255,255,255,0.25)" stroke-width="1" stroke-dasharray="2,2"></line>`;
+
+    drawables.forEach(({ c }) => {
+      if (c.isSpike) {
+        const [bx, by] = proj(c.x, c.depth, 0);
+        const [tx, ty] = proj(c.x, c.depth, 1.15);
         html += `<line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}" x2="${tx.toFixed(1)}" y2="${ty.toFixed(1)}" stroke="#ffd60a" stroke-width="2"></line>`;
         html += `<circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="2.5" fill="#ffd60a"></circle>`;
         html += `<text class="dist-axis-label" x="${bx.toFixed(1)}" y="${(by + 12).toFixed(1)}" text-anchor="middle">${c.label}</text>`;
         return;
       }
+      // 曲線下の面(密度の"体積")を、ピーク密度の色で半透明に塗って立体感を出す
+      const areaPts = c.pts.map(([x0, z0]) => proj(x0, c.depth, z0 / c.localMax));
+      const base0 = proj(c.pts[0][0], c.depth, 0);
+      const baseN = proj(c.pts[c.pts.length - 1][0], c.depth, 0);
+      const areaPath = "M" + areaPts.map(([sx, sy]) => sx.toFixed(1) + "," + sy.toFixed(1)).join(" L")
+        + ` L${baseN[0].toFixed(1)},${baseN[1].toFixed(1)} L${base0[0].toFixed(1)},${base0[1].toFixed(1)} Z`;
+      html += `<path d="${areaPath}" fill="${densityToColor(1)}" opacity="0.12"></path>`;
+
       let segHtml = "";
       for (let i = 0; i < c.pts.length - 1; i++) {
         const [x0, z0] = c.pts[i];
         const [x1, z1] = c.pts[i + 1];
-        const [sx0, sy0] = projPt(x0, c.ti, z0 / c.localMax);
-        const [sx1, sy1] = projPt(x1, c.ti, z1 / c.localMax);
+        const [sx0, sy0] = proj(x0, c.depth, z0 / c.localMax);
+        const [sx1, sy1] = proj(x1, c.depth, z1 / c.localMax);
         const color = densityToColor(((z0 + z1) / 2) / c.localMax);
         segHtml += `<line x1="${sx0.toFixed(1)}" y1="${sy0.toFixed(1)}" x2="${sx1.toFixed(1)}" y2="${sy1.toFixed(1)}" stroke="${color}" stroke-width="2"></line>`;
       }
-      // 底辺(基準線)
-      const [baseStartX, baseStartY] = projPt(c.pts[0][0], c.ti, 0);
-      const [baseEndX, baseEndY] = projPt(c.pts[c.pts.length - 1][0], c.ti, 0);
-      html += `<line x1="${baseStartX.toFixed(1)}" y1="${baseStartY.toFixed(1)}" x2="${baseEndX.toFixed(1)}" y2="${baseEndY.toFixed(1)}" stroke="rgba(255,255,255,0.25)" stroke-width="0.6"></line>`;
+      html += `<line x1="${base0[0].toFixed(1)}" y1="${base0[1].toFixed(1)}" x2="${baseN[0].toFixed(1)}" y2="${baseN[1].toFixed(1)}" stroke="rgba(255,255,255,0.25)" stroke-width="0.6"></line>`;
       html += segHtml;
-      html += `<text class="dist-axis-label" x="${baseStartX.toFixed(1)}" y="${(baseStartY + 12).toFixed(1)}" text-anchor="middle">${c.label}</text>`;
+      html += `<text class="dist-axis-label" x="${base0[0].toFixed(1)}" y="${(base0[1] + 12).toFixed(1)}" text-anchor="middle">${c.label}</text>`;
     });
 
     svgEl.innerHTML = html;
 
     if (captionEl) {
-      captionEl.innerHTML = `x軸=ドル建て価値、y軸(奥行き)=時間(現在→各シナリオ)、z軸(高さ)・色=確率密度`
+      captionEl.innerHTML = `x軸=ドル建て価値、奥行き=時間(現在→各シナリオ)、高さ・色=確率密度`
         + `(リッジラインプロットのように各時点ごとに最大densityで正規化して高さを比較しやすくしている)。`
-        + `時間が進むほど分布の裾が広がる(不確実性が増す)様子を幾何学的に表現。`;
+        + `時間が進むほど分布の裾が広がる(不確実性が増す)様子を表現。`
+        + `ドラッグ/スワイプで視点を自由に回転できます。`;
     }
   }
 
@@ -994,14 +887,74 @@
       return;
     }
     bondForecastDistCardEl.style.display = "block";
+    lastForecastForDist = forecast;
     try {
-      renderPdf2D(pdf2dChartEl, pdf2dCaptionEl, forecast);
-      renderJoint3D(joint3dChartEl, joint3dCaptionEl, forecast);
       renderEvo4D(evo4dChartEl, evo4dCaptionEl, forecast);
     } catch (err) {
       bondForecastDistCardEl.style.display = "none";
     }
   }
+
+  // --- ドラッグ/スワイプによる自由回転の操作 ---
+  (function setupEvo4dRotationControls() {
+    if (!evo4dChartEl) return;
+    let dragging = false;
+    let startX = 0, startY = 0;
+    let startTheta = 0, startPhi = 0;
+    const SENSITIVITY = 0.012;
+
+    function rerender() {
+      if (lastForecastForDist) {
+        try { renderEvo4D(evo4dChartEl, evo4dCaptionEl, lastForecastForDist); } catch (err) { /* noop */ }
+      }
+    }
+
+    function pointerPos(evt) {
+      if (evt.touches && evt.touches.length) return [evt.touches[0].clientX, evt.touches[0].clientY];
+      return [evt.clientX, evt.clientY];
+    }
+
+    function onDragStart(evt) {
+      dragging = true;
+      const [px, py] = pointerPos(evt);
+      startX = px; startY = py;
+      startTheta = evo4dView.theta; startPhi = evo4dView.phi;
+      evo4dChartEl.style.cursor = "grabbing";
+    }
+
+    function onDragMove(evt) {
+      if (!dragging) return;
+      evt.preventDefault();
+      const [px, py] = pointerPos(evt);
+      const dx = px - startX, dy = py - startY;
+      evo4dView.theta = startTheta + dx * SENSITIVITY;
+      evo4dView.phi = Math.max(EVO4D_PHI_MIN, Math.min(EVO4D_PHI_MAX, startPhi - dy * SENSITIVITY));
+      rerender();
+    }
+
+    function onDragEnd() {
+      if (!dragging) return;
+      dragging = false;
+      evo4dChartEl.style.cursor = "grab";
+    }
+
+    evo4dChartEl.addEventListener("mousedown", onDragStart);
+    window.addEventListener("mousemove", onDragMove);
+    window.addEventListener("mouseup", onDragEnd);
+
+    evo4dChartEl.addEventListener("touchstart", onDragStart, { passive: true });
+    evo4dChartEl.addEventListener("touchmove", onDragMove, { passive: false });
+    window.addEventListener("touchend", onDragEnd);
+    window.addEventListener("touchcancel", onDragEnd);
+
+    if (evo4dResetBtnEl) {
+      evo4dResetBtnEl.addEventListener("click", () => {
+        evo4dView.theta = EVO4D_DEFAULT_VIEW.theta;
+        evo4dView.phi = EVO4D_DEFAULT_VIEW.phi;
+        rerender();
+      });
+    }
+  })();
 
   function setRefreshing(isRefreshing) {
     refreshBtn.disabled = isRefreshing;
