@@ -1237,9 +1237,27 @@
       const bt = bond.backtest_var_95;
       const k = bt.kupiec;
       items.push([
-        "バックテスト(ローリングVaR 95%, Kupiec検定)",
+        "簡易バックテスト(ローリングVaR 95%, Kupiec検定)",
         `実測超過率${(k.observed_rate * 100).toFixed(1)}% / 理論値${(k.expected_rate * 100).toFixed(1)}%`
-          + `(${bt.n_tested}日中${bt.n_breaches}回超過, p値${k.p_value.toFixed(3)}${k.reject_at_5pct ? "・5%水準で有意差あり" : "・有意差なし"})`,
+          + `(${bt.n_tested}日中${bt.n_breaches}回超過, p値${k.p_value.toFixed(3)}${k.reject_at_5pct ? "・5%水準で有意差あり" : "・有意差なし"})`
+          + `<br/><span style="font-size:0.78em;opacity:0.75;">先読みバイアスあり(自由度νを遡及適用)。厳密版は下記フルバックテスト参照</span>`,
+      ]);
+    }
+
+    if (bond.full_backtest && bond.full_backtest.kupiec) {
+      const fb = bond.full_backtest;
+      const k = fb.kupiec;
+      const ind = fb.independence;
+      const cc = fb.conditional_coverage;
+      const es = fb.es_backtest;
+      const parts = [];
+      parts.push(`頻度: 実測${(k.observed_rate * 100).toFixed(1)}%/理論${(k.expected_rate * 100).toFixed(1)}%(${fb.n_tested}日中${fb.n_breaches}回, p=${k.p_value.toFixed(3)}${k.reject_at_5pct ? "・有意差あり" : "・有意差なし"})`);
+      if (ind) parts.push(`独立性: p=${ind.p_value.toFixed(3)}${ind.reject_at_5pct ? "・超過の偏りあり" : "・偏りなし"}`);
+      if (cc) parts.push(`条件付きカバレッジ: p=${cc.p_value.toFixed(3)}${cc.reject_at_5pct ? "・不合格" : "・合格"}`);
+      if (es) parts.push(`ESの精度: 超過日の実測損失平均が予測ESの${es.ratio}倍(${es.n_breach_days}回)`);
+      items.push([
+        `フルバックテスト(先読みなしウォークフォワード, ${fb.n_refits}回再推定)`,
+        parts.map((p) => `<div>${p}</div>`).join(""),
       ]);
     }
 

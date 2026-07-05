@@ -887,12 +887,174 @@ def backtest_var(log_returns, window=60, confidence=0.95, nu=5.0):
             breaches += 1
     kupiec = kupiec_pof_test(count, breaches, alpha)
     return {
+        "method": "simplified_rolling_std",
         "window": window,
         "confidence": confidence,
         "nu_used": nu,
         "n_tested": count,
         "n_breaches": breaches,
         "kupiec": kupiec,
+        "note": "直近window日間の単純な実測標準偏差のみでVaRを計算する簡易版バックテスト。"
+                "自由度νは全期間データから推定した最終値を遡及適用しているため、軽微な"
+                "先読みバイアスがある(超過の時間的な偏りはChristoffersen検定を含む"
+                "full_backtestで別途検証)",
+    }
+
+
+def christoffersen_independence_test(breach_flags):
+    """Christoffersen(1998)の独立性検定。VaR超過(breach)を2状態マルコフ連鎖と見なし、
+    「超過が起きた翌日にまた超過が起きる確率」が「超過が起きなかった翌日に超過が起きる
+    確率」と統計的に同じか(=超過が時間的に偏りなく独立に発生しているか)を尤度比検定で
+    評価する。Kupiec検定は「頻度」しか見ないため、超過が特定の期間に固まって発生する
+    (モデルの反応が遅れている等の)問題を検出できない弱点を補う。"""
+    n = len(breach_flags)
+    if n < 30:
+        return None
+
+    def safe_log(x):
+        return math.log(x) if x > 0 else 0.0
+
+    n00 = n01 = n10 = n11 = 0
+    for i in range(1, n):
+        prev, cur = breach_flags[i - 1], breach_flags[i]
+        if not prev and not cur:
+            n00 += 1
+        elif not prev and cur:
+            n01 += 1
+        elif prev and not cur:
+            n10 += 1
+        else:
+            n11 += 1
+
+    n0_total = n00 + n01
+    n1_total = n10 + n11
+    if n0_total == 0 or n1_total == 0:
+        return None
+
+    pi01 = n01 / n0_total
+    pi11 = n11 / n1_total
+    pi = (n01 + n11) / (n00 + n01 + n10 + n11)
+
+    ll_null = (n00 + n10) * safe_log(1 - pi) + (n01 + n11) * safe_log(pi)
+    ll_alt = (
+        n00 * safe_log(1 - pi01) + n01 * safe_log(pi01)
+        + n10 * safe_log(1 - pi11) + n11 * safe_log(pi11)
+    )
+    lr_stat = -2 * (ll_null - ll_alt)
+    p_value = math.erfc(math.sqrt(max(lr_stat, 0) / 2))
+    return {
+        "n00": n00, "n01": n01, "n10": n10, "n11": n11,
+        "prob_breach_after_no_breach": round(pi01, 4),
+        "prob_breach_after_breach": round(pi11, 4),
+        "lr_statistic": round(lr_stat, 3),
+        "p_value": round(p_value, 4),
+        "reject_at_5pct": p_value < 0.05,
+    }
+
+
+def walk_forward_full_backtest(returns, min_train=150, refit_freq=21, confidence=0.95):
+    """フルバックテスト: 「その時点で実際に得られていたデータのみ」を使ってGARCH(1,1)-t
+    (α・β・自由度ν)を一定間隔(refit_freq営業日=約1ヵ月ごと)で再推定し、再推定の合間は
+    GARCHの分散再帰式(σ²_t=ω+α・r²_{t-1}+β・σ²_{t-1})で条件付き分散を日次更新しながら、
+    毎日その時点のσ_t・ν_tからVaR・ESを計算して実際のリターンと比較する。
+
+    簡易版(backtest_var: 直前window日の単純標準偏差+全期間データで推定した自由度νを
+    遡及適用)と異なり、パラメータ推定に「将来のデータ」を一切使わない(先読みバイアスなし)。
+    Kupiec検定(超過頻度)に加え、Christoffersen独立性検定(超過の時間的な偏り)・両者を
+    統合した条件付きカバレッジ検定・ESの妥当性検証(超過日の実測損失平均とモデル予測ESの比較)
+    も行う、より厳密なモデル検証。"""
+    n = len(returns)
+    if n < min_train + 60:
+        return None
+    alpha_level = 1 - confidence
+
+    breach_flags = []
+    var_thresholds = []
+    es_thresholds = []
+    actuals = []
+    n_refits = 0
+
+    fit = None
+    var_t = None
+    next_refit_idx = min_train
+
+    for t in range(min_train, n):
+        if fit is None or t >= next_refit_idx:
+            train_data = returns[:t]  # t日目より前のデータのみを使用(先読みなし)
+            new_fit = fit_garch11_t(train_data)
+            if new_fit:
+                fit = new_fit
+                long_run_var = fit["omega"] / max(1e-9, 1 - fit["alpha"] - fit["beta"])
+                var_t = long_run_var
+                n_refits += 1
+            next_refit_idx = t + refit_freq
+        if fit is None or var_t is None or var_t <= 0:
+            continue
+
+        sigma_t = math.sqrt(var_t)
+        nu_t = fit.get("nu") or 5.0
+        q_mult = t_quantile_standard(alpha_level, nu_t)  # 負値
+        es_mult = t_expected_shortfall_multiplier(nu_t, alpha_level)
+        var_threshold = q_mult * sigma_t
+        es_threshold = -es_mult * sigma_t
+
+        r = returns[t]
+        breach_flags.append(r < var_threshold)
+        var_thresholds.append(var_threshold)
+        es_thresholds.append(es_threshold)
+        actuals.append(r)
+
+        # 観測したリターンを使って分散再帰式を1期進める(翌日以降の予測に反映)
+        var_t = fit["omega"] + fit["alpha"] * r * r + fit["beta"] * var_t
+
+    n_tested = len(breach_flags)
+    n_breaches = sum(1 for b in breach_flags if b)
+    if n_tested == 0:
+        return None
+
+    kupiec = kupiec_pof_test(n_tested, n_breaches, alpha_level)
+    independence = christoffersen_independence_test(breach_flags)
+    conditional_coverage = None
+    if kupiec and independence:
+        lr_cc = kupiec["lr_statistic"] + independence["lr_statistic"]
+        p_cc = math.exp(-max(lr_cc, 0) / 2)  # 自由度2のカイ二乗分布の生存確率(=指数分布)
+        conditional_coverage = {
+            "lr_statistic": round(lr_cc, 3),
+            "p_value": round(p_cc, 4),
+            "reject_at_5pct": p_cc < 0.05,
+        }
+
+    breach_indices = [i for i, b in enumerate(breach_flags) if b]
+    es_backtest = None
+    if breach_indices:
+        avg_realized_loss = -statistics.mean(actuals[i] for i in breach_indices)
+        avg_predicted_es = -statistics.mean(es_thresholds[i] for i in breach_indices)
+        es_backtest = {
+            "n_breach_days": len(breach_indices),
+            "avg_realized_loss": round(avg_realized_loss, 6),
+            "avg_predicted_es": round(avg_predicted_es, 6),
+            "ratio": round(avg_realized_loss / avg_predicted_es, 3) if avg_predicted_es else None,
+            "note": "VaR超過が発生した日に限定した、実際の損失の平均とモデルが予測したExpected "
+                    "Shortfallの平均の比較(McNeil–Frey(2000)型のES検証)。比率が1に近いほど、"
+                    "「最悪シナリオの深刻さ」の推定が実際の悪化度合いと整合していることを示す",
+        }
+
+    return {
+        "method": "walk_forward_garch_t",
+        "min_train": min_train,
+        "refit_freq": refit_freq,
+        "n_refits": n_refits,
+        "confidence": confidence,
+        "n_tested": n_tested,
+        "n_breaches": n_breaches,
+        "kupiec": kupiec,
+        "independence": independence,
+        "conditional_coverage": conditional_coverage,
+        "es_backtest": es_backtest,
+        "note": "先読みバイアスを排除したウォークフォワード検証: 各時点で入手可能だったデータのみを"
+                f"使い、約{refit_freq}営業日ごとにGARCH(1,1)-tを再推定(初回は直近{min_train}営業日で学習)。"
+                "Kupiec検定(頻度)・Christoffersen独立性検定(超過の時間的偏り)・両者を統合した"
+                "条件付きカバレッジ検定・ESの妥当性検証まで実施した厳密版バックテスト",
     }
 
 
@@ -1103,10 +1265,20 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
     ensemble_es_low = round(min(valid_es.values()), 4) if valid_es else round(es_param_low, 4)
     ensemble_es_method = min(valid_es, key=valid_es.get) if valid_es else "parametric_t"
 
-    # --- バックテスト: ローリングVaR超過率のKupiec比率的中検定 ---
+    # --- バックテスト: ローリングVaR超過率のKupiec比率的中検定(簡易版) ---
     # 直近window日間の実測ボラティリティ(モデルの単純化版)から日々VaRを計算し、
     # 実際の超過頻度が理論値(1-confidence)と統計的に整合しているかを検証する。
+    # 自由度νは全期間データから推定した最終値を遡及適用しているため、軽微な先読み
+    # バイアスがある(下のfull_backtestはこれを排除したより厳密な検証)。
     backtest_result = backtest_var(ext_usd_value_log_ret, window=60, confidence=0.95, nu=estimated_nu)
+
+    # --- フルバックテスト: ウォークフォワード方式による厳密な検証 ---
+    # 各時点で実際に入手可能だったデータのみを使ってGARCH(1,1)-tを定期的に再推定し、
+    # 先読みバイアスを排除。Kupiec検定に加えChristoffersen独立性検定・条件付きカバレッジ・
+    # ESの妥当性検証まで行う(詳細はwalk_forward_full_backtestのdocstring参照)。
+    full_backtest_result = walk_forward_full_backtest(
+        ext_usd_value_log_ret, min_train=150, refit_freq=21, confidence=0.95
+    )
 
     # --- テール依存構造の実測診断(コピュラの簡易代替) ---
     # 線形相関(ピアソン相関)だけでは「同時に大きく悪化する」確率を過小評価しうるため、
@@ -1188,6 +1360,7 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
         "evt_tail_risk": evt_result,
         "filtered_historical_simulation": fhs_result,
         "backtest_var_95": backtest_result,
+        "full_backtest": full_backtest_result,
         "yield_fx_tail_dependence": tail_dependence,
         "bond_info": {
             "issue": "30年利付国債(第90回)",
