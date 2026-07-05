@@ -1261,6 +1261,20 @@
       ]);
     }
 
+    if (bond.full_backtest_sensitivity && bond.full_backtest_sensitivity.runs) {
+      const fbs = bond.full_backtest_sensitivity;
+      const rows = fbs.runs.map((r) => {
+        const kMark = r.kupiec_reject ? "不合格" : "合格";
+        const ccMark = r.conditional_coverage_reject ? "不合格" : "合格";
+        return `<div>${r.refit_freq}営業日毎(${r.n_refits}回再推定): 超過率${(r.observed_breach_rate * 100).toFixed(1)}% / Kupiec ${kMark}(p=${r.kupiec_p_value.toFixed(3)}) / CC ${ccMark}(p=${r.conditional_coverage_p_value.toFixed(3)})</div>`;
+      });
+      items.push([
+        "再推定頻度の感度分析(パラメータ設定の妥当性検証)",
+        `<div style="margin-bottom:4px;">結論は${fbs.stable_conclusion ? "全パターンで安定(合格)" : "再推定頻度により変化"}</div>`
+          + rows.join(""),
+      ]);
+    }
+
     if (bond.yield_fx_tail_dependence) {
       const td = bond.yield_fx_tail_dependence;
       items.push([

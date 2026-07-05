@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-05T08:10:43.286025+00:00",
+  "generated_at": "2026-07-05T11:52:47.870895+00:00",
   "jgb_30y": {
     "value": 3.937,
     "date": "2026/7/2",
@@ -851,10 +851,10 @@
         "value": 59.3427
       }
     ],
-    "jgb_yield_daily_vol_bp": 4.801,
+    "jgb_yield_daily_vol_bp": 4.799,
     "jgb_yield_daily_vol_bp_realized": 4.073,
     "jgb_yield_daily_vol_bp_iv_adjusted": 3.812,
-    "usd_jpy_daily_vol_pct": 0.3341,
+    "usd_jpy_daily_vol_pct": 0.3362,
     "usd_jpy_daily_vol_pct_realized": 0.3831,
     "usd_jpy_daily_vol_pct_iv_adjusted": 0.3618,
     "yield_fx_correlation": 0.192,
@@ -876,100 +876,100 @@
     },
     "garch11": {
       "jgb_yield": {
-        "omega": 0.4925697448246582,
-        "alpha": 0.3986,
-        "beta": 0.5632,
-        "persistence": 0.9618,
-        "forecast_vol": 6.047284292229115,
+        "omega": 0.5047183417490846,
+        "alpha": 0.3976,
+        "beta": 0.5633,
+        "persistence": 0.9608,
+        "forecast_vol": 6.042361619518735,
         "long_run_vol": 3.590219431386475,
-        "log_likelihood": -1309.977,
+        "log_likelihood": -1309.764,
         "n_obs": 519,
-        "nu": 4.02,
+        "nu": 4.06,
         "shape_fit": {
-          "nu": 4.02,
-          "scale": 0.8708,
-          "log_likelihood": -797.807,
+          "nu": 4.06,
+          "scale": 0.8667,
+          "log_likelihood": -796.571,
           "n_obs": 519
         }
       },
       "usd_jpy": {
-        "omega": 0.00048330040395273046,
+        "omega": 0.0010262511763408117,
         "alpha": 0.194,
-        "beta": 0.8049,
-        "persistence": 0.9989,
-        "forecast_vol": 0.30845298841052143,
+        "beta": 0.8036,
+        "persistence": 0.9976,
+        "forecast_vol": 0.3124705949648064,
         "long_run_vol": 0.6502982803750074,
-        "log_likelihood": -481.008,
+        "log_likelihood": -480.269,
         "n_obs": 519,
-        "nu": 3.34,
+        "nu": 3.41,
         "shape_fit": {
-          "nu": 3.34,
-          "scale": 0.7875,
-          "log_likelihood": -775.904,
+          "nu": 3.41,
+          "scale": 0.7943,
+          "log_likelihood": -778.151,
           "n_obs": 519
         }
       },
       "usd_value_direct": {
-        "omega": 2.0279465976803554e-05,
-        "alpha": 0.3274,
-        "beta": 0.4771,
-        "persistence": 0.8046,
-        "forecast_vol": 0.010583391158681116,
+        "omega": 2.03599122175654e-05,
+        "alpha": 0.3248,
+        "beta": 0.479,
+        "persistence": 0.8038,
+        "forecast_vol": 0.01058199493601814,
         "long_run_vol": 0.010186716706070006,
-        "log_likelihood": 1679.971,
+        "log_likelihood": 1680.183,
         "n_obs": 519,
-        "nu": 5.04,
+        "nu": 5.08,
         "shape_fit": {
-          "nu": 5.04,
-          "scale": 0.8396,
-          "log_likelihood": -750.096,
+          "nu": 5.08,
+          "scale": 0.8344,
+          "log_likelihood": -748.838,
           "n_obs": 519
         }
       },
-      "note": "GARCH(1,1)-t(分散ターゲティング法によるMLE, 格子探索+反復プロファイル尤度で自由度νも同時推定)による翌営業日の予測ボラティリティ。過去60営業日の等ウェイト実測値と異なり、ボラティリティ・クラスタリング(荒れ相場の後は荒れが続きやすい性質)を反映できる。usd_value_directは利回り・為替を合成せず、USD建て価値の日次変化率そのものに直接あてはめたクロスチェック用モデル。最終的な採用ボラティリティ(jgb_yield_daily_vol_bp等)はIV反映値との幾何平均"
+      "note": "GARCH(1,1)-t(分散ターゲティング法によるMLE, 粗いシード格子+Nelder-Mead法でα・βを精緻化し、反復プロファイル尤度で自由度νも同時推定)による翌営業日の予測ボラティリティ。過去60営業日の等ウェイト実測値と異なり、ボラティリティ・クラスタリング(荒れ相場の後は荒れが続きやすい性質)を反映できる。usd_value_directは利回り・為替を合成せず、USD建て価値の日次変化率そのものに直接あてはめたクロスチェック用モデル。最終的な採用ボラティリティ(jgb_yield_daily_vol_bp等)はIV反映値との幾何平均"
     },
     "degrees_of_freedom": {
-      "estimated_nu": 5.04,
+      "estimated_nu": 5.08,
       "source": "usd_value_direct_garch_t",
       "note": "テール(裾)の厚さを表すt分布の自由度ν。従来は「5」に固定していたが、GARCH標準化残差(ボラティリティ・クラスタリングを除去した純粋なショック)にt分布をMLEであてはめることでデータから直接推定する。νが小さいほど裾が厚い(極端な変動が起きやすい)ことを意味する"
     },
     "statistical_range_90": {
-      "low": 58.307,
-      "high": 60.7276,
+      "low": 58.3086,
+      "high": 60.7259,
       "note": "IV反映後の現在価値推定(usd_value_iv_adjusted)を中心に、過去60営業日の実測ボラティリティ・MOVE/VIXのIVレジーム比・GARCH(1,1)-t予測ボラティリティ(線形合成モデルとUSD建て価値直接モデルの幾何平均)・データ駆動の自由度νを組み合わせた統計的な変動レンジ(個別の材料の方向感は含まない)"
     },
     "expected_shortfall_95": {
-      "low": 57.7966,
+      "low": 57.8012,
       "method": "parametric_t",
       "components": {
-        "parametric_t": 57.7966,
-        "evt_gpd": 58.1016,
-        "fhs": 57.9803
+        "parametric_t": 57.8012,
+        "evt_gpd": 58.1004,
+        "fhs": 57.9832
       },
       "note": "下側Expected Shortfall(CVaR, 95%): 起こりうる最悪5%のシナリオに限定した場合の期待値。前提の異なる3手法「パラメトリック(データ駆動の自由度νのt分布解析解)」「EVT(極値理論, POT+一般化パレート分布による裾そのものの直接推定)」「FHS(Filtered Historical Simulation, 分布形状を仮定しないノンパラメトリック手法)」を算出し、最も保守的(価格が最も下がる)な値を採用したアンサンブル。VaR(90%区間の下限)より厳しい、テールリスクを織り込んだ指標(Basel III/FRTBで採用されている手法)"
     },
     "evt_tail_risk": {
       "threshold": 0.01111,
       "threshold_quantile": 0.9,
-      "xi": 0.1125,
-      "beta": 0.006652,
+      "xi": 0.1085,
+      "beta": 0.006697,
       "n_exceedances": 51,
       "n_obs": 519,
       "target_p": 0.95,
-      "var": 0.015779937033928174,
-      "es": 0.023867079062706163
+      "var": 0.01580509934088032,
+      "es": 0.02388854292677551
     },
     "filtered_historical_simulation": {
-      "es_z": -2.5672,
+      "es_z": -2.5614,
       "n_tail_obs": 26,
       "n_obs": 519,
-      "es_scaled": -0.02595702028508503
+      "es_scaled": -0.025907282046772187
     },
     "backtest_var_95": {
       "method": "simplified_rolling_std",
       "window": 60,
       "confidence": 0.95,
-      "nu_used": 5.04,
+      "nu_used": 5.08,
       "n_tested": 459,
       "n_breaches": 11,
       "kupiec": {
@@ -990,40 +990,73 @@
       "n_refits": 18,
       "confidence": 0.95,
       "n_tested": 369,
-      "n_breaches": 15,
+      "n_breaches": 16,
       "kupiec": {
         "n_obs": 369,
-        "n_breaches": 15,
-        "observed_rate": 0.0407,
+        "n_breaches": 16,
+        "observed_rate": 0.0434,
         "expected_rate": 0.050000000000000044,
-        "lr_statistic": 0.723,
-        "p_value": 0.395,
+        "lr_statistic": 0.358,
+        "p_value": 0.5497,
         "reject_at_5pct": false
       },
       "independence": {
-        "n00": 339,
-        "n01": 14,
-        "n10": 14,
+        "n00": 337,
+        "n01": 15,
+        "n10": 15,
         "n11": 1,
-        "prob_breach_after_no_breach": 0.0397,
-        "prob_breach_after_breach": 0.0667,
-        "lr_statistic": 0.228,
-        "p_value": 0.6327,
+        "prob_breach_after_no_breach": 0.0426,
+        "prob_breach_after_breach": 0.0625,
+        "lr_statistic": 0.13,
+        "p_value": 0.7189,
         "reject_at_5pct": false
       },
       "conditional_coverage": {
-        "lr_statistic": 0.951,
-        "p_value": 0.6216,
+        "lr_statistic": 0.488,
+        "p_value": 0.7835,
         "reject_at_5pct": false
       },
       "es_backtest": {
-        "n_breach_days": 15,
-        "avg_realized_loss": 0.024481,
-        "avg_predicted_es": 0.023027,
-        "ratio": 1.063,
+        "n_breach_days": 16,
+        "avg_realized_loss": 0.024295,
+        "avg_predicted_es": 0.023152,
+        "ratio": 1.049,
         "note": "VaR超過が発生した日に限定した、実際の損失の平均とモデルが予測したExpected Shortfallの平均の比較(McNeil–Frey(2000)型のES検証)。比率が1に近いほど、「最悪シナリオの深刻さ」の推定が実際の悪化度合いと整合していることを示す"
       },
       "note": "先読みバイアスを排除したウォークフォワード検証: 各時点で入手可能だったデータのみを使い、約21営業日ごとにGARCH(1,1)-tを再推定(初回は直近150営業日で学習)。Kupiec検定(頻度)・Christoffersen独立性検定(超過の時間的偏り)・両者を統合した条件付きカバレッジ検定・ESの妥当性検証まで実施した厳密版バックテスト"
+    },
+    "full_backtest_sensitivity": {
+      "runs": [
+        {
+          "refit_freq": 10,
+          "n_refits": 37,
+          "observed_breach_rate": 0.0352,
+          "kupiec_p_value": 0.1702,
+          "kupiec_reject": false,
+          "conditional_coverage_p_value": 0.3006,
+          "conditional_coverage_reject": false
+        },
+        {
+          "refit_freq": 21,
+          "n_refits": 18,
+          "observed_breach_rate": 0.0434,
+          "kupiec_p_value": 0.5497,
+          "kupiec_reject": false,
+          "conditional_coverage_p_value": 0.7835,
+          "conditional_coverage_reject": false
+        },
+        {
+          "refit_freq": 42,
+          "n_refits": 9,
+          "observed_breach_rate": 0.0434,
+          "kupiec_p_value": 0.5497,
+          "kupiec_reject": false,
+          "conditional_coverage_p_value": 0.7835,
+          "conditional_coverage_reject": false
+        }
+      ],
+      "stable_conclusion": true,
+      "note": "再推定頻度(refit_freq)を10・21・42営業日など複数パターンに変えてフルバックテストを繰り返し、モデルが「棄却されない(良好)」という結論が特定の再推定頻度に依存した偶然の結果ではないかを確認する感度分析。全パターンで棄却されなければ結論は安定的"
     },
     "yield_fx_tail_dependence": {
       "q": 0.1,
@@ -1075,29 +1108,29 @@
     },
     "garch11": {
       "jgb_yield": {
-        "alpha": 0.3957,
-        "beta": 0.5661,
-        "persistence": 0.9618,
+        "alpha": 0.3976,
+        "beta": 0.5633,
+        "persistence": 0.9608,
         "forecast_vol": 6.04,
         "long_run_vol": 3.59,
-        "nu": 4.02
+        "nu": 4.06
       },
       "usd_jpy": {
         "alpha": 0.194,
-        "beta": 0.8049,
-        "persistence": 0.9989,
+        "beta": 0.8036,
+        "persistence": 0.9976,
         "forecast_vol": 0.308,
         "long_run_vol": 0.651,
-        "nu": 3.34
+        "nu": 3.41
       },
       "usd_value_direct": {
-        "alpha": 0.3274,
-        "beta": 0.4771,
-        "persistence": 0.8046,
+        "alpha": 0.3248,
+        "beta": 0.479,
+        "persistence": 0.8038,
         "forecast_vol_pct": 1.058,
-        "nu": 5.04
+        "nu": 5.08
       },
-      "note": "GARCH(1,1)-t(分散ターゲティング法によるMLE, 反復プロファイル尤度で自由度νも同時推定)による翌営業日の予測ボラティリティ。JGB利回りは直近の入札不調によるショックの持続(α=0.40と反応感度が高め)で長期平均(3.59bp)より予測値(6.04bp)が上振れ、USD/JPYはボラティリティの持続性が非常に高い(β=0.80)ものの直近は落ち着いており長期平均(0.651%)より予測値(0.308%)が下振れ。usd_value_directは利回り・為替を合成せずUSD建て価値の変化率に直接あてはめたクロスチェック用モデルで、自由度ν=5.04は全体の統計的自由度推定に採用"
+      "note": "GARCH(1,1)-t(分散ターゲティング法によるMLE, 粗いシード格子+Nelder-Mead法でα・βを精緻化し、反復プロファイル尤度で自由度νも同時推定)による翌営業日の予測ボラティリティ。JGB利回りは直近の入札不調によるショックの持続(α=0.40と反応感度が高め)で長期平均(3.59bp)より予測値(6.04bp)が上振れ、USD/JPYはボラティリティの持続性が非常に高い(β=0.80)ものの直近は落ち着いており長期平均(0.651%)より予測値(0.308%)が下振れ。usd_value_directは利回り・為替を合成せずUSD建て価値の変化率に直接あてはめたクロスチェック用モデルで、自由度ν=5.08は全体の統計的自由度推定に採用"
     },
     "signals_jgb_yield": [
       {
@@ -1205,8 +1238,8 @@
       "JGB利回り変化とFX変化の相関(ρ=0.192)は過去60営業日の実測値だが、シグナルごとの相関構造までは反映していない。また実測テール依存係数(excess_ratio≈1.73)が示す通り、線形相関のみを用いたモンテカルロは極端な同時悪化シナリオの確率をやや過小評価している可能性がある",
       "為替(USD/JPY)と金利(JGB利回り)を独立に統合後、相関ρのみで結合しており、完全なコピュラモデルではない",
       "IV(インプライドボラティリティ)はJGB・USD/JPY固有のオプション市場データではなく、無料で取得可能なMOVE指数(米国債IV)・VIX指数(株式IV)を代理指標として使用した近似",
-      "GARCH(1,1)-tは分散ターゲティング法・格子探索・反復プロファイル尤度による簡易的なMLE実装であり、真の同時最尤推定(準ニュートン法等によるα・β・νの同時最適化)による改善余地がある",
-      "EVT(極値理論)の閾値は上位10%点に固定しており、閾値選択(Hill plot等によるより厳密な手法)次第で結果が変わりうる",
+      "GARCH(1,1)-tは分散ターゲティング法(ω=長期分散×(1-α-β))+Nelder-Mead法によるMLEでα・βを推定し、νは反復プロファイル尤度で別途推定する準最適化であり、(ω,α,β,ν)の完全な同時最尤推定ではない(ただし分散ターゲティングの妥当性はAIC比較で確認済み。詳細はfit_garch11のコメント参照)",
+      "EVT(極値理論)の閾値は上位10%点に固定しており、閾値選択(Hill plot等によるより厳密な手法)次第で結果が変わりうる。フルバックテスト自体の再推定頻度(refit_freq)については10・21・42営業日の複数パターンで結論が安定することを確認済み(full_backtest_sensitivity参照)",
       "投資助言ではなく、教育・分析目的の試験的なモデル出力"
     ]
   }

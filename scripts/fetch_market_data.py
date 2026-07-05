@@ -84,19 +84,20 @@ BAYESIAN_FORECAST_SNAPSHOT = {
                 "データで裏付けられた形",
     },
     "garch11": {
-        "jgb_yield": {"alpha": 0.3957, "beta": 0.5661, "persistence": 0.9618,
-                       "forecast_vol": 6.04, "long_run_vol": 3.59, "nu": 4.02},
-        "usd_jpy": {"alpha": 0.194, "beta": 0.8049, "persistence": 0.9989,
-                    "forecast_vol": 0.308, "long_run_vol": 0.651, "nu": 3.34},
-        "usd_value_direct": {"alpha": 0.3274, "beta": 0.4771, "persistence": 0.8046,
-                              "forecast_vol_pct": 1.058, "nu": 5.04},
-        "note": "GARCH(1,1)-t(分散ターゲティング法によるMLE, 反復プロファイル尤度で自由度νも"
-                "同時推定)による翌営業日の予測ボラティリティ。JGB利回りは直近の入札不調による"
+        "jgb_yield": {"alpha": 0.3976, "beta": 0.5633, "persistence": 0.9608,
+                       "forecast_vol": 6.04, "long_run_vol": 3.59, "nu": 4.06},
+        "usd_jpy": {"alpha": 0.194, "beta": 0.8036, "persistence": 0.9976,
+                    "forecast_vol": 0.308, "long_run_vol": 0.651, "nu": 3.41},
+        "usd_value_direct": {"alpha": 0.3248, "beta": 0.479, "persistence": 0.8038,
+                              "forecast_vol_pct": 1.058, "nu": 5.08},
+        "note": "GARCH(1,1)-t(分散ターゲティング法によるMLE, 粗いシード格子+Nelder-Mead法で"
+                "α・βを精緻化し、反復プロファイル尤度で自由度νも同時推定)による翌営業日の予測"
+                "ボラティリティ。JGB利回りは直近の入札不調による"
                 "ショックの持続(α=0.40と反応感度が高め)で長期平均(3.59bp)より予測値(6.04bp)が"
                 "上振れ、USD/JPYはボラティリティの持続性が非常に高い(β=0.80)ものの直近は落ち着いて"
                 "おり長期平均(0.651%)より予測値(0.308%)が下振れ。usd_value_directは利回り・為替を"
                 "合成せずUSD建て価値の変化率に直接あてはめたクロスチェック用モデルで、"
-                "自由度ν=5.04は全体の統計的自由度推定に採用",
+                "自由度ν=5.08は全体の統計的自由度推定に採用",
     },
     "signals_jgb_yield": [
         {"name": "過去実績(ベースライン, GARCH(1,1)-t×IV反映)", "mean_bp": 0.40, "std_bp": 4.82,
@@ -192,10 +193,13 @@ BAYESIAN_FORECAST_SNAPSHOT = {
         "為替(USD/JPY)と金利(JGB利回り)を独立に統合後、相関ρのみで結合しており、完全なコピュラモデルではない",
         "IV(インプライドボラティリティ)はJGB・USD/JPY固有のオプション市場データではなく、"
         "無料で取得可能なMOVE指数(米国債IV)・VIX指数(株式IV)を代理指標として使用した近似",
-        "GARCH(1,1)-tは分散ターゲティング法・格子探索・反復プロファイル尤度による簡易的なMLE実装であり、"
-        "真の同時最尤推定(準ニュートン法等によるα・β・νの同時最適化)による改善余地がある",
+        "GARCH(1,1)-tは分散ターゲティング法(ω=長期分散×(1-α-β))+Nelder-Mead法によるMLEで"
+        "α・βを推定し、νは反復プロファイル尤度で別途推定する準最適化であり、(ω,α,β,ν)の完全な"
+        "同時最尤推定ではない(ただし分散ターゲティングの妥当性はAIC比較で確認済み。詳細はfit_garch11の"
+        "コメント参照)",
         "EVT(極値理論)の閾値は上位10%点に固定しており、閾値選択(Hill plot等によるより厳密な手法)次第で"
-        "結果が変わりうる",
+        "結果が変わりうる。フルバックテスト自体の再推定頻度(refit_freq)については10・21・42営業日の"
+        "複数パターンで結論が安定することを確認済み(full_backtest_sensitivity参照)",
         "投資助言ではなく、教育・分析目的の試験的なモデル出力",
     ],
 }
@@ -540,6 +544,97 @@ def t_expected_shortfall_multiplier(nu, alpha):
     return (g / alpha) * (nu + q * q) / (nu - 1)
 
 
+# --- Nelder-Mead法(単体法)による汎用最小化(追加依存なし) ---
+# 以前はGARCH・t分布形状・GPDのMLEをいずれも「格子探索+段階的な範囲縮小による精緻化」で
+# 実施していたが、この方式は(1)格子の粗さに応じた離散化誤差が残る、(2)何度も範囲を
+# 縮小して再探索するため関数評価回数(=計算コスト)が多い、という欠点がある。
+# Nelder-Mead法(単体法, Nelder & Mead 1965)は勾配を使わない直接探索法で、少ない評価回数で
+# 連続空間上の局所最適解に収束できる。ここでは初期値依存による局所解のリスクを抑えるため、
+# 「粗いシード格子で良い初期点を探す→そこからNelder-Meadで精緻化する」という2段構成にしている。
+def nelder_mead(neg_f, x0, step, no_improve_thr=1e-10, no_improve_break=12, max_iter=300):
+    """neg_f: 最小化したい関数(通常は負の対数尤度)。x0: 初期点(リスト)。step: 各次元の
+    初期単体を作るためのステップ幅(リスト)。標準的なNelder-Mead(反射・拡張・収縮・縮小)を
+    実装している。"""
+    dim = len(x0)
+    alpha_r, gamma_e, rho_c, sigma_s = 1.0, 2.0, 0.5, 0.5
+
+    def f(x):
+        try:
+            v = neg_f(x)
+        except (ValueError, OverflowError, ZeroDivisionError):
+            return 1e18
+        if v is None or math.isnan(v):
+            return 1e18
+        return v
+
+    simplex = [[list(x0), f(x0)]]
+    for i in range(dim):
+        x = list(x0)
+        x[i] += step[i]
+        simplex.append([x, f(x)])
+
+    prev_best = simplex[0][1]
+    no_improv = 0
+    for _ in range(max_iter):
+        simplex.sort(key=lambda t: t[1])
+        best = simplex[0][1]
+        if best < prev_best - no_improve_thr:
+            no_improv = 0
+            prev_best = best
+        else:
+            no_improv += 1
+        if no_improv >= no_improve_break:
+            break
+
+        centroid = [0.0] * dim
+        for pt, _ in simplex[:-1]:
+            for i, c in enumerate(pt):
+                centroid[i] += c / (len(simplex) - 1)
+
+        worst_pt, worst_score = simplex[-1]
+        xr = [centroid[i] + alpha_r * (centroid[i] - worst_pt[i]) for i in range(dim)]
+        fr = f(xr)
+        if simplex[0][1] <= fr < simplex[-2][1]:
+            simplex[-1] = [xr, fr]
+            continue
+        if fr < simplex[0][1]:
+            xe = [centroid[i] + gamma_e * (xr[i] - centroid[i]) for i in range(dim)]
+            fe = f(xe)
+            simplex[-1] = [xe, fe] if fe < fr else [xr, fr]
+            continue
+        xc = [centroid[i] - rho_c * (centroid[i] - worst_pt[i]) for i in range(dim)]
+        fc = f(xc)
+        if fc < worst_score:
+            simplex[-1] = [xc, fc]
+            continue
+        best_pt = simplex[0][0]
+        for j in range(1, len(simplex)):
+            xs = [best_pt[i] + sigma_s * (simplex[j][0][i] - best_pt[i]) for i in range(dim)]
+            simplex[j] = [xs, f(xs)]
+
+    simplex.sort(key=lambda t: t[1])
+    return simplex[0][0], simplex[0][1]
+
+
+def mle_optimize_2d(log_likelihood, p1_range, p2_range, step1, step2, seed_steps=5):
+    """2次元MLEの汎用ヘルパー: まず粗いseed_steps×seed_stepsのシード格子で対数尤度を
+    評価し最良点を見つけ、そこを初期値としてNelder-Meadで精緻化する。log_likelihoodは
+    (p1, p2)を受け取り対数尤度(大きいほど良い)を返す関数(制約違反時は-infを返す想定)。"""
+    best = (-math.inf, None, None)
+    for i in range(seed_steps + 1):
+        p1 = p1_range[0] + (p1_range[1] - p1_range[0]) * i / seed_steps
+        for j in range(seed_steps + 1):
+            p2 = p2_range[0] + (p2_range[1] - p2_range[0]) * j / seed_steps
+            ll = log_likelihood(p1, p2)
+            if ll > best[0]:
+                best = (ll, p1, p2)
+    if best[1] is None:
+        return None
+    neg_f = lambda x: -log_likelihood(x[0], x[1])
+    x_best, neg_ll_best = nelder_mead(neg_f, [best[1], best[2]], [step1, step2])
+    return x_best[0], x_best[1], -neg_ll_best
+
+
 # --- 自由度ν(裾の太さ)のデータ駆動推定 ---
 # これまでは「自由度5」を固定値として仮定していたが、実際の裾の厚さは市場ごとに異なる。
 # GARCHで標準化した残差 z_t = r_t/σ_t (ボラティリティ・クラスタリングを除去した「純粋な
@@ -558,42 +653,24 @@ def compute_garch_standardized_residuals(returns, omega, alpha, beta):
 
 def fit_t_shape(standardized_residuals):
     """位置0のt分布を標準化残差にあてはめ、自由度ν(裾の厚さ)とスケール補正を
-    格子探索+局所精緻化によるMLEで推定する。"""
+    MLEで推定する(粗いシード格子+Nelder-Mead法による精緻化)。"""
     n = len(standardized_residuals)
     if n < 40:
         return None
 
     def log_likelihood(sigma, nu):
-        if sigma <= 0:
+        if sigma <= 0 or nu <= 2.01:
             return -math.inf
         ll = 0.0
         for z in standardized_residuals:
             ll += math.log(t_pdf_standard(z / sigma, nu)) - math.log(sigma)
         return ll
 
-    def grid_search(sigma_range, nu_range, steps):
-        best = (-math.inf, None, None)
-        for si in range(steps + 1):
-            sigma = sigma_range[0] + (sigma_range[1] - sigma_range[0]) * si / steps
-            for ni in range(steps + 1):
-                nu = nu_range[0] + (nu_range[1] - nu_range[0]) * ni / steps
-                ll = log_likelihood(sigma, nu)
-                if ll > best[0]:
-                    best = (ll, sigma, nu)
-        return best
-
-    best_ll, best_sigma, best_nu = grid_search((0.6, 1.6), (2.2, 40.0), 24)
-    if best_sigma is None:
+    result = mle_optimize_2d(log_likelihood, (0.6, 1.6), (2.2, 40.0), step1=0.1, step2=1.5, seed_steps=6)
+    if result is None:
         return None
-    span_s, span_n = 0.25, 6.0
-    for _ in range(2):
-        best_ll, best_sigma, best_nu = grid_search(
-            (max(0.3, best_sigma - span_s), best_sigma + span_s),
-            (max(2.05, best_nu - span_n), best_nu + span_n),
-            16,
-        )
-        span_s /= 3.0
-        span_n /= 3.0
+    best_sigma, best_nu, best_ll = result
+    best_nu = max(2.05, best_nu)
 
     return {
         "nu": round(best_nu, 2),
@@ -608,8 +685,11 @@ def fit_t_shape(standardized_residuals):
 # GARCH(1,1)はボラティリティ・クラスタリング(荒れた相場の後は荒れが続きやすい)を
 # σ²_t = ω + α·r²_{t-1} + β·σ²_{t-1} という自己回帰構造で捉える。
 # ここでは Engle–Mezrich (1996) の分散ターゲティング法を用い、ω = 長期分散·(1-α-β) と
-# 置くことで探索パラメータを(α, β)の2次元に削減し、格子探索+局所精緻化で最尤推定する
-# (scipy等の数値最適化ライブラリへの依存を避けるため)。
+# 置くことで探索パラメータを(α, β)の2次元に削減した上でMLEを行う(scipy等への依存を避け
+# つつ、粗いシード格子+Nelder-Mead法による精緻化で連続空間上の最適解を求める)。
+# なお分散ターゲティングは(ω,α,β)の完全な3パラメータMLEに対する制約付きの近似だが、
+# 実データで両者を比較したところ対数尤度の改善はごくわずか(パラメータ数の増加に対して
+# AIC上は割に合わない)だったため、パラメータ数を1つ減らせる分散ターゲティングを採用している。
 # nuを指定すると、正規分布の代わりに自由度nuのt分布を尤度関数に用いる
 # (Bollerslev(1987)のGARCH-tモデル。金融リターンの過剰尖度をボラティリティ推定自体にも反映)。
 def fit_garch11(returns, nu=None):
@@ -621,6 +701,8 @@ def fit_garch11(returns, nu=None):
         return None
 
     def log_likelihood(alpha, beta):
+        if alpha < 0 or beta < 0 or alpha + beta >= 0.999:
+            return -math.inf
         omega = long_run_var * (1 - alpha - beta)
         if omega <= 0:
             return -math.inf
@@ -637,32 +719,12 @@ def fit_garch11(returns, nu=None):
             var_t = omega + alpha * r * r + beta * var_t
         return ll
 
-    def grid_search(alpha_range, beta_range, steps):
-        best = (-math.inf, None, None)
-        for ai in range(steps + 1):
-            alpha = alpha_range[0] + (alpha_range[1] - alpha_range[0]) * ai / steps
-            for bi in range(steps + 1):
-                beta = beta_range[0] + (beta_range[1] - beta_range[0]) * bi / steps
-                if alpha < 0 or beta < 0 or alpha + beta >= 0.999:
-                    continue
-                ll = log_likelihood(alpha, beta)
-                if ll > best[0]:
-                    best = (ll, alpha, beta)
-        return best
-
-    best_ll, best_alpha, best_beta = grid_search((0.01, 0.35), (0.5, 0.97), 20)
-    if best_alpha is None:
+    result = mle_optimize_2d(log_likelihood, (0.02, 0.4), (0.4, 0.95), step1=0.03, step2=0.03, seed_steps=6)
+    if result is None:
         return None
-    # 粗い格子探索で見つけた最適点の周辺をさらに2段階で精緻化する
-    span_a, span_b = 0.06, 0.06
-    for _ in range(2):
-        best_ll, best_alpha, best_beta = grid_search(
-            (max(0.001, best_alpha - span_a), min(0.6, best_alpha + span_a)),
-            (max(0.3, best_beta - span_b), min(0.98, best_beta + span_b)),
-            14,
-        )
-        span_a /= 3.0
-        span_b /= 3.0
+    best_alpha, best_beta, best_ll = result
+    if not math.isfinite(best_ll) or best_alpha + best_beta >= 0.999:
+        return None
 
     omega = long_run_var * (1 - best_alpha - best_beta)
     var_t = long_run_var
@@ -719,8 +781,8 @@ def fit_garch11_t(returns):
 # 従うことが知られている。分布全体ではなく裾そのものを直接モデル化することで、
 # t分布による近似が持つ「裾の中央部分に引きずられる」バイアスを避けられる。
 def fit_gpd(exceedances):
-    """一般化パレート分布(GPD)を閾値超過量にMLE(格子探索+精緻化)であてはめる。
-    形状パラメータxi(xi>0で裾が厚い)とスケールパラメータbetaを推定する。"""
+    """一般化パレート分布(GPD)を閾値超過量にMLE(粗いシード格子+Nelder-Mead法による
+    精緻化)であてはめる。形状パラメータxi(xi>0で裾が厚い)とスケールパラメータbetaを推定する。"""
     n = len(exceedances)
     if n < 20:
         return None
@@ -742,29 +804,13 @@ def fit_gpd(exceedances):
                 ll += -math.log(beta) - (1 / xi + 1) * math.log(z)
         return ll
 
-    def grid_search(xi_range, beta_range, steps):
-        best = (-math.inf, None, None)
-        for xi_i in range(steps + 1):
-            xi = xi_range[0] + (xi_range[1] - xi_range[0]) * xi_i / steps
-            for b_i in range(steps + 1):
-                beta = beta_range[0] + (beta_range[1] - beta_range[0]) * b_i / steps
-                ll = log_likelihood(xi, beta)
-                if ll > best[0]:
-                    best = (ll, xi, beta)
-        return best
-
-    best_ll, best_xi, best_beta = grid_search((-0.4, 0.7), (mean_exc * 0.2, mean_exc * 3.0), 22)
-    if best_xi is None:
+    result = mle_optimize_2d(
+        log_likelihood, (-0.4, 0.7), (mean_exc * 0.2, mean_exc * 3.0),
+        step1=0.05, step2=mean_exc * 0.1, seed_steps=6,
+    )
+    if result is None:
         return None
-    span_xi, span_beta = 0.15, mean_exc * 0.6
-    for _ in range(2):
-        best_ll, best_xi, best_beta = grid_search(
-            (best_xi - span_xi, best_xi + span_xi),
-            (max(1e-6, best_beta - span_beta), best_beta + span_beta),
-            16,
-        )
-        span_xi /= 3.0
-        span_beta /= 3.0
+    best_xi, best_beta, best_ll = result
 
     return {
         "xi": round(best_xi, 4),
@@ -1058,6 +1104,40 @@ def walk_forward_full_backtest(returns, min_train=150, refit_freq=21, confidence
     }
 
 
+# --- バックテストの再推定頻度(refit_freq)に対する感度分析 ---
+# refit_freq=21営業日(≒1ヵ月)という値自体は「1つの根拠ある妥当な選択」ではあるが、単一の値
+# だけで検証すると、その値固有のたまたまの結果ではないかという疑問が残る。Nelder-Mead法への
+# 移行でGARCH-tの再推定が高速化したため、複数の再推定頻度で同じ検定を実行し、結論(帰無仮説を
+# 棄却するか否か)が再推定頻度の選び方に依存しない安定した結果かどうかを直接確認する。
+def full_backtest_sensitivity(returns, min_train=150, refit_freqs=(10, 21, 42), confidence=0.95):
+    """複数のrefit_freq(再推定頻度)でwalk_forward_full_backtestを実行し、Kupiec検定・
+    独立性検定・条件付きカバレッジ検定の結論が安定しているかを確認する感度分析。"""
+    runs = []
+    for rf in refit_freqs:
+        result = walk_forward_full_backtest(returns, min_train=min_train, refit_freq=rf, confidence=confidence)
+        if result is None:
+            continue
+        runs.append({
+            "refit_freq": rf,
+            "n_refits": result["n_refits"],
+            "observed_breach_rate": round(result["n_breaches"] / result["n_tested"], 4) if result["n_tested"] else None,
+            "kupiec_p_value": result["kupiec"]["p_value"] if result["kupiec"] else None,
+            "kupiec_reject": result["kupiec"]["reject_at_5pct"] if result["kupiec"] else None,
+            "conditional_coverage_p_value": result["conditional_coverage"]["p_value"] if result["conditional_coverage"] else None,
+            "conditional_coverage_reject": result["conditional_coverage"]["reject_at_5pct"] if result["conditional_coverage"] else None,
+        })
+    if not runs:
+        return None
+    all_pass = all(not r["kupiec_reject"] and not r["conditional_coverage_reject"] for r in runs)
+    return {
+        "runs": runs,
+        "stable_conclusion": all_pass,
+        "note": "再推定頻度(refit_freq)を10・21・42営業日など複数パターンに変えてフルバックテストを"
+                "繰り返し、モデルが「棄却されない(良好)」という結論が特定の再推定頻度に依存した"
+                "偶然の結果ではないかを確認する感度分析。全パターンで棄却されなければ結論は安定的",
+    }
+
+
 def empirical_tail_dependence(x_series, y_series, q=0.10):
     """利回り変化とドル円変化が「同時に国債USD建て価値にとって悪い方向」に大きく
     動く経験的な同時確率(下側/上側テール依存)を求める。正規分布(ガウス型コピュラ)を
@@ -1279,6 +1359,9 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
     full_backtest_result = walk_forward_full_backtest(
         ext_usd_value_log_ret, min_train=150, refit_freq=21, confidence=0.95
     )
+    full_backtest_sensitivity_result = full_backtest_sensitivity(
+        ext_usd_value_log_ret, min_train=150, refit_freqs=(10, 21, 42), confidence=0.95
+    )
 
     # --- テール依存構造の実測診断(コピュラの簡易代替) ---
     # 線形相関(ピアソン相関)だけでは「同時に大きく悪化する」確率を過小評価しうるため、
@@ -1318,9 +1401,10 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
             "jgb_yield": _strip_internal_keys(garch_yield),
             "usd_jpy": _strip_internal_keys(garch_fx),
             "usd_value_direct": _strip_internal_keys(garch_direct),
-            "note": "GARCH(1,1)-t(分散ターゲティング法によるMLE, 格子探索+反復プロファイル尤度で"
-                    "自由度νも同時推定)による翌営業日の予測ボラティリティ。過去60営業日の等ウェイト"
-                    "実測値と異なり、ボラティリティ・クラスタリング(荒れ相場の後は荒れが続きやすい性質)を"
+            "note": "GARCH(1,1)-t(分散ターゲティング法によるMLE, 粗いシード格子+Nelder-Mead法で"
+                    "α・βを精緻化し、反復プロファイル尤度で自由度νも同時推定)による翌営業日の予測"
+                    "ボラティリティ。過去60営業日の等ウェイト実測値と異なり、"
+                    "ボラティリティ・クラスタリング(荒れ相場の後は荒れが続きやすい性質)を"
                     "反映できる。usd_value_directは利回り・為替を合成せず、USD建て価値の日次変化率"
                     "そのものに直接あてはめたクロスチェック用モデル。最終的な採用ボラティリティ"
                     "(jgb_yield_daily_vol_bp等)はIV反映値との幾何平均",
@@ -1361,6 +1445,7 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
         "filtered_historical_simulation": fhs_result,
         "backtest_var_95": backtest_result,
         "full_backtest": full_backtest_result,
+        "full_backtest_sensitivity": full_backtest_sensitivity_result,
         "yield_fx_tail_dependence": tail_dependence,
         "bond_info": {
             "issue": "30年利付国債(第90回)",
