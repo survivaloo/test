@@ -1228,6 +1228,17 @@
       items.push(["極値理論(EVT: POT+一般化パレート分布)", `形状ξ=${evt.xi.toFixed(3)}(裾の重さ) / 閾値超過${evt.n_exceedances}件中`]);
     }
 
+    if (bond.evt_threshold_sensitivity && bond.evt_threshold_sensitivity.runs) {
+      const ets = bond.evt_threshold_sensitivity;
+      items.push([
+        "EVT閾値の感度分析(パラメータ設定の妥当性検証)",
+        `ES変動係数=${(ets.es_coefficient_of_variation * 100).toFixed(2)}%(${ets.stable ? "安定" : "要注意"})`
+          + `<br/><span style="font-size:0.78em;opacity:0.75;">閾値80/85/90/92/95%点でのES: `
+          + ets.runs.map((r) => "$" + r.es.toFixed(4)).join(" / ")
+          + `</span>`,
+      ]);
+    }
+
     if (bond.filtered_historical_simulation) {
       const fhs = bond.filtered_historical_simulation;
       items.push(["Filtered Historical Simulation", `標準化残差の実測下側5%平均 = ${fhs.es_z.toFixed(2)}σ(分布形状を仮定しないノンパラメトリック推定)`]);

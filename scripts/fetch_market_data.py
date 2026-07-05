@@ -197,8 +197,12 @@ BAYESIAN_FORECAST_SNAPSHOT = {
         "α・βを推定し、νは反復プロファイル尤度で別途推定する準最適化であり、(ω,α,β,ν)の完全な"
         "同時最尤推定ではない(ただし分散ターゲティングの妥当性はAIC比較で確認済み。詳細はfit_garch11の"
         "コメント参照)",
-        "EVT(極値理論)の閾値は上位10%点に固定しており、閾値選択(Hill plot等によるより厳密な手法)次第で"
-        "結果が変わりうる。フルバックテスト自体の再推定頻度(refit_freq)については10・21・42営業日の"
+        "レバレッジ効果(下落時と上昇時でボラティリティ反応が非対称になる効果)を捉えるGJR-GARCHも"
+        "検証したが、AICの改善はごくわずか(ΔAIC≈-0.55、通常の判定基準である-2を下回らない)で"
+        "追加パラメータを正当化できず、現状は対称なGARCH(1,1)-tを採用している",
+        "EVT(極値理論)の閾値は上位10%点をデフォルトとしているが、80〜95%点の範囲で閾値を変えても"
+        "VaR・ESの変動係数は小さく(evt_threshold_sensitivity参照)、閾値選択への感度は限定的であることを"
+        "確認済み。フルバックテスト自体の再推定頻度(refit_freq)についても10・21・42営業日の"
         "複数パターンで結論が安定することを確認済み(full_backtest_sensitivity参照)",
         "投資助言ではなく、教育・分析目的の試験的なモデル出力",
     ],
@@ -863,6 +867,42 @@ def evt_tail_risk(loss_series, threshold_quantile=0.90, target_p=0.95):
     }
 
 
+# --- EVTの閾値選択に対する感度分析 ---
+# 「上位10%点を閾値とする」という選択は一般的な目安だが、GPDのMLEは閾値の取り方に応じて
+# バイアス・分散のトレードオフがある(閾値が低すぎるとGPD近似が成り立たない領域まで含み
+# バイアスが生じ、高すぎると超過データ数が減り分散が大きくなる)。単一の閾値だけで結果を
+# 報告すると、その選択に依存した結果ではないかという疑問が残るため、複数の閾値でVaR・ESを
+# 算出し、閾値の選び方に対する実務上の結論の安定性(閾値選択への感度)を直接確認する。
+def evt_threshold_sensitivity(loss_series, target_p=0.95, threshold_quantiles=(0.80, 0.85, 0.90, 0.92, 0.95)):
+    """複数の閾値(上位q%点)でevt_tail_riskを実行し、xi・VaR・ESの安定性を確認する感度分析。"""
+    runs = []
+    for q in threshold_quantiles:
+        result = evt_tail_risk(loss_series, threshold_quantile=q, target_p=target_p)
+        if result is None or result.get("es") is None:
+            continue
+        runs.append({
+            "threshold_quantile": q,
+            "n_exceedances": result["n_exceedances"],
+            "xi": round(result["xi"], 4),
+            "var": round(result["var"], 6),
+            "es": round(result["es"], 6),
+        })
+    if len(runs) < 2:
+        return None
+    es_values = [r["es"] for r in runs]
+    es_mean = statistics.mean(es_values)
+    es_cv = (statistics.pstdev(es_values) / es_mean) if es_mean else None  # 変動係数(相対的なばらつき)
+    return {
+        "runs": runs,
+        "es_coefficient_of_variation": round(es_cv, 4) if es_cv is not None else None,
+        "stable": bool(es_cv is not None and es_cv < 0.05),
+        "note": "閾値(上位80/85/90/92/95%点)を変えてEVTのVaR・ESを再計算し、単一の閾値選択に"
+                "結果が過度に依存していないかを確認する感度分析。形状パラメータξは閾値により"
+                "多少変動しうるが、実務上重要なES自体の変動係数(ばらつき/平均)が小さいほど、"
+                "閾値選択の結論は安定的",
+    }
+
+
 def fhs_tail_es(standardized_residuals, forecast_vol, alpha=0.05):
     """Filtered Historical Simulation(FHS): GARCHで標準化した実測残差の経験分布を
     (正規分布やt分布のような分布形状の仮定を一切置かずに)そのまま使い、翌日の予測
@@ -1331,6 +1371,7 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
 
     evt_loss_series = [-r for r in ext_usd_value_log_ret]  # 価値の下落(損失)を正の値にする
     evt_result = evt_tail_risk(evt_loss_series, threshold_quantile=0.90, target_p=0.95)
+    evt_threshold_sensitivity_result = evt_threshold_sensitivity(evt_loss_series, target_p=0.95)
     es_evt_low = usd_value_iv_adjusted * math.exp(-evt_result["es"]) if evt_result and evt_result.get("es") else None
 
     fhs_result = None
@@ -1442,6 +1483,7 @@ def fetch_jgb_30y_bond_usd(jgb_current: dict, iv_regime: dict | None = None):
                     "(Basel III/FRTBで採用されている手法)",
         },
         "evt_tail_risk": evt_result,
+        "evt_threshold_sensitivity": evt_threshold_sensitivity_result,
         "filtered_historical_simulation": fhs_result,
         "backtest_var_95": backtest_result,
         "full_backtest": full_backtest_result,
