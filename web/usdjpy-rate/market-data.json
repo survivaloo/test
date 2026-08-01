@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-31T02:12:34.436818+00:00",
+  "generated_at": "2026-08-01T02:13:57.228091+00:00",
   "jgb_30y": {
     "value": 3.971,
     "date": "2026/7/30",
@@ -475,17 +475,17 @@
   "jgb_30y_bond_usd": {
     "jgb_yield_pct": 3.971,
     "jgb_yield_date": "2026/7/30",
-    "usd_jpy": 162.94,
-    "usd_jpy_date": "2026-07-30",
+    "usd_jpy": 160.24,
+    "usd_jpy_date": "2026-07-31",
     "jgb_jpy_price": 95.315,
     "modified_duration": 17.55,
     "convexity": 0.0423,
-    "usd_value_per_10k_face": 58.497,
-    "usd_value_iv_adjusted": 58.5021,
+    "usd_value_per_10k_face": 59.4827,
+    "usd_value_iv_adjusted": 59.488,
     "iv_present_value_adjustment": {
-      "total": 0.0051,
-      "yield_convexity_term": 0.0035,
-      "fx_convexity_term": 0.0011,
+      "total": 0.0053,
+      "yield_convexity_term": 0.0037,
+      "fx_convexity_term": 0.001,
       "cross_term": 0.0006,
       "note": "IV(MOVE指数・VIX指数)反映後のボラティリティを用いて、価格が利回りに対して凸(コンベックス)であること・USD換算が為替に対して凸であることによる期待値のズレ(イェンセンの不等式)を単純DCF価格に加算した現在価値推定への補正額"
     },
@@ -851,59 +851,59 @@
         "value": 58.497
       }
     ],
-    "jgb_yield_daily_vol_bp": 5.328,
+    "jgb_yield_daily_vol_bp": 5.427,
     "jgb_yield_daily_vol_bp_realized": 4.178,
-    "jgb_yield_daily_vol_bp_iv_adjusted": 4.267,
-    "usd_jpy_daily_vol_pct": 0.424,
+    "jgb_yield_daily_vol_bp_iv_adjusted": 4.427,
+    "usd_jpy_daily_vol_pct": 0.4171,
     "usd_jpy_daily_vol_pct_realized": 0.3779,
-    "usd_jpy_daily_vol_pct_iv_adjusted": 0.3664,
+    "usd_jpy_daily_vol_pct_iv_adjusted": 0.3544,
     "yield_fx_correlation": 0.252,
     "iv_regime": {
       "move": {
-        "current": 77.09,
-        "avg_1y": 73.92,
-        "regime_ratio": 1.0429,
-        "date": "2026-07-30",
+        "current": 83.02,
+        "avg_1y": 73.94,
+        "regime_ratio": 1.1228,
+        "date": "2026-07-31",
         "description": "ICE BofA MOVE指数(米国債オプションの30日インプライドボラティリティ)。JGB固有のオプションIVは無料で取得できないため、金利IVレジームの代理指標として使用"
       },
       "vix": {
-        "current": 17.09,
+        "current": 15.99,
         "avg_1y": 18.18,
-        "regime_ratio": 0.9401,
-        "date": "2026-07-30",
+        "regime_ratio": 0.8797,
+        "date": "2026-07-31",
         "description": "CBOE VIX指数(S&P500オプションの30日インプライドボラティリティ)。USD/JPY固有のオプションIV(CVOL等)は無料で取得できないため、リスクオフ局面で円の変動と連動しやすいVIXを為替IVレジームの代理指標として使用"
       }
     },
     "garch11": {
       "jgb_yield": {
-        "omega": 1.1678538694973866,
+        "omega": 1.1699070786429633,
         "alpha": 0.2679,
         "beta": 0.6439,
         "persistence": 0.9117,
-        "forecast_vol": 6.652974579924056,
-        "long_run_vol": 3.6370480149312567,
-        "log_likelihood": -1297.589,
-        "n_obs": 505
+        "forecast_vol": 6.653407840278663,
+        "long_run_vol": 3.6402437661763374,
+        "log_likelihood": -1295.562,
+        "n_obs": 504
       },
       "usd_jpy": {
-        "omega": 0.032407124504896495,
-        "alpha": 0.0751,
-        "beta": 0.849,
-        "persistence": 0.9241,
-        "forecast_vol": 0.490719363327694,
-        "long_run_vol": 0.6536149968404036,
-        "log_likelihood": -483.502,
-        "n_obs": 505
+        "omega": 0.031248319447523248,
+        "alpha": 0.0723,
+        "beta": 0.8547,
+        "persistence": 0.927,
+        "forecast_vol": 0.49094041494763824,
+        "long_run_vol": 0.6542623101738451,
+        "log_likelihood": -483.129,
+        "n_obs": 504
       },
       "note": "GARCH(1,1)(分散ターゲティング法によるMLE, 格子探索で推定)による翌営業日の予測ボラティリティ。過去60営業日の等ウェイト実測値と異なり、ボラティリティ・クラスタリング(荒れ相場の後は荒れが続きやすい性質)を反映できる。最終的な採用ボラティリティ(jgb_yield_daily_vol_bp等)はIV反映値との幾何平均"
     },
     "statistical_range_90": {
-      "low": 57.4342,
-      "high": 59.5899,
+      "low": 58.3904,
+      "high": 60.6063,
       "note": "IV反映後の現在価値推定(usd_value_iv_adjusted)を中心に、過去60営業日の実測ボラティリティ・MOVE/VIXのIVレジーム比・GARCH(1,1)予測ボラティリティを組み合わせた統計的な変動レンジ(個別の材料の方向感は含まない)"
     },
     "expected_shortfall_95": {
-      "low": 56.6388,
+      "low": 57.5729,
       "note": "下側Expected Shortfall(CVaR, 95%): 起こりうる最悪5%のシナリオに限定した場合の期待値(自由度5のt分布の解析解)。VaR(90%区間の下限)より厳しい、テールリスクを織り込んだ保守的な指標(Basel III/FRTBで採用されている手法)"
     },
     "bond_info": {
