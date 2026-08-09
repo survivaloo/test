@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-08T01:09:21.421198+00:00",
+  "generated_at": "2026-08-09T01:14:34.643002+00:00",
   "jgb_30y": {
     "value": 3.919,
     "date": "2026/8/6",
@@ -369,108 +369,6 @@
     ],
     "source": "Ministry of Finance Japan",
     "source_url": "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/"
-  },
-  "us_unemployment": {
-    "value": 4.1,
-    "period": "2026-07",
-    "period_name": "2026年7月",
-    "unit": "%",
-    "history": [
-      {
-        "period": "2024-08",
-        "value": 4.2
-      },
-      {
-        "period": "2024-09",
-        "value": 4.1
-      },
-      {
-        "period": "2024-10",
-        "value": 4.1
-      },
-      {
-        "period": "2024-11",
-        "value": 4.2
-      },
-      {
-        "period": "2024-12",
-        "value": 4.1
-      },
-      {
-        "period": "2025-01",
-        "value": 4.0
-      },
-      {
-        "period": "2025-02",
-        "value": 4.2
-      },
-      {
-        "period": "2025-03",
-        "value": 4.2
-      },
-      {
-        "period": "2025-04",
-        "value": 4.2
-      },
-      {
-        "period": "2025-05",
-        "value": 4.3
-      },
-      {
-        "period": "2025-06",
-        "value": 4.1
-      },
-      {
-        "period": "2025-07",
-        "value": 4.3
-      },
-      {
-        "period": "2025-08",
-        "value": 4.3
-      },
-      {
-        "period": "2025-09",
-        "value": 4.4
-      },
-      {
-        "period": "2025-11",
-        "value": 4.5
-      },
-      {
-        "period": "2025-12",
-        "value": 4.4
-      },
-      {
-        "period": "2026-01",
-        "value": 4.3
-      },
-      {
-        "period": "2026-02",
-        "value": 4.4
-      },
-      {
-        "period": "2026-03",
-        "value": 4.3
-      },
-      {
-        "period": "2026-04",
-        "value": 4.3
-      },
-      {
-        "period": "2026-05",
-        "value": 4.3
-      },
-      {
-        "period": "2026-06",
-        "value": 4.2
-      },
-      {
-        "period": "2026-07",
-        "value": 4.1
-      }
-    ],
-    "source": "U.S. Bureau of Labor Statistics",
-    "source_url": "https://www.bls.gov/cps/"
   },
   "jgb_30y_bond_usd": {
     "jgb_yield_pct": 3.919,
@@ -851,19 +749,19 @@
         "value": 60.9455
       }
     ],
-    "jgb_yield_daily_vol_bp": 4.127,
+    "jgb_yield_daily_vol_bp": 4.11,
     "jgb_yield_daily_vol_bp_realized": 4.197,
-    "jgb_yield_daily_vol_bp_iv_adjusted": 4.144,
-    "usd_jpy_daily_vol_pct": 0.5163,
+    "jgb_yield_daily_vol_bp_iv_adjusted": 4.109,
+    "usd_jpy_daily_vol_pct": 0.5187,
     "usd_jpy_daily_vol_pct_realized": 0.3681,
     "usd_jpy_daily_vol_pct_iv_adjusted": 0.3337,
     "yield_fx_correlation": 0.282,
     "iv_regime": {
       "move": {
-        "current": 72.03,
-        "avg_1y": 73.9,
-        "regime_ratio": 0.9747,
-        "date": "2026-08-07",
+        "current": 70.88,
+        "avg_1y": 73.97,
+        "regime_ratio": 0.9583,
+        "date": "2026-07-17",
         "description": "ICE BofA MOVE指数(米国債オプションの30日インプライドボラティリティ)。JGB固有のオプションIVは無料で取得できないため、金利IVレジームの代理指標として使用"
       },
       "vix": {
@@ -876,34 +774,34 @@
     },
     "garch11": {
       "jgb_yield": {
-        "omega": 1.0672410757507407,
+        "omega": 1.0687110247252736,
         "alpha": 0.2537,
         "beta": 0.6674,
         "persistence": 0.9211,
-        "forecast_vol": 4.111491002239281,
-        "long_run_vol": 3.6771736958705334,
-        "log_likelihood": -1350.058,
-        "n_obs": 521
+        "forecast_vol": 4.11202836347978,
+        "long_run_vol": 3.6797051753523395,
+        "log_likelihood": -1347.588,
+        "n_obs": 520
       },
       "usd_jpy": {
-        "omega": 0.04211954368526369,
-        "alpha": 0.0866,
-        "beta": 0.8147,
-        "persistence": 0.9013,
-        "forecast_vol": 0.7987877802746568,
-        "long_run_vol": 0.653208496418127,
-        "log_likelihood": -497.734,
-        "n_obs": 521
+        "omega": 0.0440201179431806,
+        "alpha": 0.0893,
+        "beta": 0.8077,
+        "persistence": 0.897,
+        "forecast_vol": 0.8061123238802129,
+        "long_run_vol": 0.6537429050139839,
+        "log_likelihood": -497.151,
+        "n_obs": 520
       },
       "note": "GARCH(1,1)(分散ターゲティング法によるMLE, 格子探索で推定)による翌営業日の予測ボラティリティ。過去60営業日の等ウェイト実測値と異なり、ボラティリティ・クラスタリング(荒れ相場の後は荒れが続きやすい性質)を反映できる。最終的な採用ボラティリティ(jgb_yield_daily_vol_bp等)はIV反映値との幾何平均"
     },
     "statistical_range_90": {
-      "low": 59.7593,
-      "high": 61.7646,
+      "low": 59.7603,
+      "high": 61.7637,
       "note": "IV反映後の現在価値推定(usd_value_iv_adjusted)を中心に、過去60営業日の実測ボラティリティ・MOVE/VIXのIVレジーム比・GARCH(1,1)予測ボラティリティを組み合わせた統計的な変動レンジ(個別の材料の方向感は含まない)"
     },
     "expected_shortfall_95": {
-      "low": 59.0175,
+      "low": 59.019,
       "note": "下側Expected Shortfall(CVaR, 95%): 起こりうる最悪5%のシナリオに限定した場合の期待値(自由度5のt分布の解析解)。VaR(90%区間の下限)より厳しい、テールリスクを織り込んだ保守的な指標(Basel III/FRTBで採用されている手法)"
     },
     "bond_info": {
