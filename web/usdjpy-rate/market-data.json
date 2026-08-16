@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-15T00:54:18.037630+00:00",
+  "generated_at": "2026-08-16T00:57:08.799804+00:00",
   "jgb_30y": {
     "value": 4.002,
     "date": "2026/8/13",
@@ -851,12 +851,12 @@
         "value": 59.4981
       }
     ],
-    "jgb_yield_daily_vol_bp": 3.391,
+    "jgb_yield_daily_vol_bp": 3.387,
     "jgb_yield_daily_vol_bp_realized": 4.111,
     "jgb_yield_daily_vol_bp_iv_adjusted": 4.111,
-    "usd_jpy_daily_vol_pct": 0.433,
+    "usd_jpy_daily_vol_pct": 0.4338,
     "usd_jpy_daily_vol_pct_realized": 0.3203,
-    "usd_jpy_daily_vol_pct_iv_adjusted": 0.284,
+    "usd_jpy_daily_vol_pct_iv_adjusted": 0.2841,
     "yield_fx_correlation": 0.189,
     "iv_regime": {
       "move": {
@@ -868,32 +868,32 @@
       },
       "vix": {
         "current": 14.25,
-        "avg_1y": 18.13,
-        "regime_ratio": 0.7861,
+        "avg_1y": 18.11,
+        "regime_ratio": 0.7871,
         "date": "2026-08-14",
         "description": "CBOE VIX指数(S&P500オプションの30日インプライドボラティリティ)。USD/JPY固有のオプションIV(CVOL等)は無料で取得できないため、リスクオフ局面で円の変動と連動しやすいVIXを為替IVレジームの代理指標として使用"
       }
     },
     "garch11": {
       "jgb_yield": {
-        "omega": 1.0582107002149368,
-        "alpha": 0.2537,
-        "beta": 0.6674,
+        "omega": 1.060265419441714,
+        "alpha": 0.2566,
+        "beta": 0.6645,
         "persistence": 0.9211,
-        "forecast_vol": 2.7968103339207997,
-        "long_run_vol": 3.6615835907245744,
-        "log_likelihood": -1333.898,
-        "n_obs": 516
+        "forecast_vol": 2.790086550052217,
+        "long_run_vol": 3.665136700540741,
+        "log_likelihood": -1331.259,
+        "n_obs": 515
       },
       "usd_jpy": {
-        "omega": 0.03205167953514011,
+        "omega": 0.03329367137509689,
         "alpha": 0.0751,
-        "beta": 0.849,
-        "persistence": 0.9241,
-        "forecast_vol": 0.6601112688691083,
-        "long_run_vol": 0.6500206526430429,
-        "log_likelihood": -490.201,
-        "n_obs": 516
+        "beta": 0.8461,
+        "persistence": 0.9213,
+        "forecast_vol": 0.6623450735541422,
+        "long_run_vol": 0.6503603630768752,
+        "log_likelihood": -489.573,
+        "n_obs": 515
       },
       "note": "GARCH(1,1)(分散ターゲティング法によるMLE, 格子探索で推定)による翌営業日の予測ボラティリティ。過去60営業日の等ウェイト実測値と異なり、ボラティリティ・クラスタリング(荒れ相場の後は荒れが続きやすい性質)を反映できる。最終的な採用ボラティリティ(jgb_yield_daily_vol_bp等)はIV反映値との幾何平均"
     },
