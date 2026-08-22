@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-21T00:58:01.611807+00:00",
+  "generated_at": "2026-08-22T00:54:06.459772+00:00",
   "jgb_30y": {
     "value": 3.995,
     "date": "2026/8/20",
@@ -475,13 +475,13 @@
   "jgb_30y_bond_usd": {
     "jgb_yield_pct": 3.995,
     "jgb_yield_date": "2026/8/20",
-    "usd_jpy": 158.76,
-    "usd_jpy_date": "2026-08-20",
+    "usd_jpy": 158.7,
+    "usd_jpy_date": "2026-08-21",
     "jgb_jpy_price": 94.9147,
     "modified_duration": 17.52,
     "convexity": 0.0422,
-    "usd_value_per_10k_face": 59.785,
-    "usd_value_iv_adjusted": 59.788,
+    "usd_value_per_10k_face": 59.8076,
+    "usd_value_iv_adjusted": 59.8106,
     "iv_present_value_adjustment": {
       "total": 0.003,
       "yield_convexity_term": 0.0014,
@@ -851,59 +851,59 @@
         "value": 59.785
       }
     ],
-    "jgb_yield_daily_vol_bp": 3.318,
+    "jgb_yield_daily_vol_bp": 3.321,
     "jgb_yield_daily_vol_bp_realized": 4.108,
-    "jgb_yield_daily_vol_bp_iv_adjusted": 4.107,
-    "usd_jpy_daily_vol_pct": 0.4688,
+    "jgb_yield_daily_vol_bp_iv_adjusted": 4.114,
+    "usd_jpy_daily_vol_pct": 0.4623,
     "usd_jpy_daily_vol_pct_realized": 0.3342,
-    "usd_jpy_daily_vol_pct_iv_adjusted": 0.3141,
+    "usd_jpy_daily_vol_pct_iv_adjusted": 0.3054,
     "yield_fx_correlation": 0.183,
     "iv_regime": {
       "move": {
-        "current": 73.18,
-        "avg_1y": 73.21,
-        "regime_ratio": 0.9996,
-        "date": "2026-08-20",
+        "current": 73.4,
+        "avg_1y": 73.17,
+        "regime_ratio": 1.0031,
+        "date": "2026-08-21",
         "description": "ICE BofA MOVE指数(米国債オプションの30日インプライドボラティリティ)。JGB固有のオプションIVは無料で取得できないため、金利IVレジームの代理指標として使用"
       },
       "vix": {
-        "current": 16.01,
-        "avg_1y": 18.13,
-        "regime_ratio": 0.8831,
-        "date": "2026-08-20",
+        "current": 15.13,
+        "avg_1y": 18.12,
+        "regime_ratio": 0.8348,
+        "date": "2026-08-21",
         "description": "CBOE VIX指数(S&P500オプションの30日インプライドボラティリティ)。USD/JPY固有のオプションIV(CVOL等)は無料で取得できないため、リスクオフ局面で円の変動と連動しやすいVIXを為替IVレジームの代理指標として使用"
       }
     },
     "garch11": {
       "jgb_yield": {
-        "omega": 1.0567431050300602,
+        "omega": 1.0578644318151358,
         "alpha": 0.2566,
         "beta": 0.6645,
         "persistence": 0.9211,
-        "forecast_vol": 2.679814220260099,
-        "long_run_vol": 3.6590436490591656,
-        "log_likelihood": -1321.655,
-        "n_obs": 512
+        "forecast_vol": 2.6804377461156346,
+        "long_run_vol": 3.660984468816515,
+        "log_likelihood": -1319.468,
+        "n_obs": 511
       },
       "usd_jpy": {
-        "omega": 0.03588161424033354,
+        "omega": 0.03595144468748323,
         "alpha": 0.078,
         "beta": 0.8376,
         "persistence": 0.9156,
-        "forecast_vol": 0.6996718723734084,
-        "long_run_vol": 0.6519154384482689,
-        "log_likelihood": -488.001,
-        "n_obs": 512
+        "forecast_vol": 0.6999790309664027,
+        "long_run_vol": 0.6525494876726967,
+        "log_likelihood": -487.694,
+        "n_obs": 511
       },
       "note": "GARCH(1,1)(分散ターゲティング法によるMLE, 格子探索で推定)による翌営業日の予測ボラティリティ。過去60営業日の等ウェイト実測値と異なり、ボラティリティ・クラスタリング(荒れ相場の後は荒れが続きやすい性質)を反映できる。最終的な採用ボラティリティ(jgb_yield_daily_vol_bp等)はIV反映値との幾何平均"
     },
     "statistical_range_90": {
-      "low": 58.9959,
-      "high": 60.5907,
+      "low": 59.0222,
+      "high": 60.6096,
       "note": "IV反映後の現在価値推定(usd_value_iv_adjusted)を中心に、過去60営業日の実測ボラティリティ・MOVE/VIXのIVレジーム比・GARCH(1,1)予測ボラティリティを組み合わせた統計的な変動レンジ(個別の材料の方向感は含まない)"
     },
     "expected_shortfall_95": {
-      "low": 58.4033,
+      "low": 58.4322,
       "note": "下側Expected Shortfall(CVaR, 95%): 起こりうる最悪5%のシナリオに限定した場合の期待値(自由度5のt分布の解析解)。VaR(90%区間の下限)より厳しい、テールリスクを織り込んだ保守的な指標(Basel III/FRTBで採用されている手法)"
     },
     "bond_info": {
