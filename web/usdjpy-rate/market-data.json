@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-08-23T00:58:21.145215+00:00",
+  "generated_at": "2026-08-24T00:56:19.269372+00:00",
   "jgb_30y": {
-    "value": 3.995,
-    "date": "2026/8/20",
-    "date_label": "2026年8月20日",
+    "value": 4.042,
+    "date": "2026/8/21",
+    "date_label": "2026年8月21日",
     "unit": "%",
     "history": [
       {
@@ -363,8 +363,8 @@
         "value": 3.982
       },
       {
-        "date": "2026-08-20",
-        "value": 3.995
+        "date": "2026-08-21",
+        "value": 4.042
       }
     ],
     "source": "Ministry of Finance Japan",
@@ -473,20 +473,20 @@
     "source_url": "https://www.bls.gov/cps/"
   },
   "jgb_30y_bond_usd": {
-    "jgb_yield_pct": 3.995,
-    "jgb_yield_date": "2026/8/20",
+    "jgb_yield_pct": 4.042,
+    "jgb_yield_date": "2026/8/21",
     "usd_jpy": 158.7,
     "usd_jpy_date": "2026-08-21",
-    "jgb_jpy_price": 94.9147,
-    "modified_duration": 17.52,
-    "convexity": 0.0422,
-    "usd_value_per_10k_face": 59.8076,
-    "usd_value_iv_adjusted": 59.8106,
+    "jgb_jpy_price": 94.1375,
+    "modified_duration": 17.47,
+    "convexity": 0.0421,
+    "usd_value_per_10k_face": 59.3179,
+    "usd_value_iv_adjusted": 59.3215,
     "iv_present_value_adjustment": {
-      "total": 0.003,
-      "yield_convexity_term": 0.0014,
+      "total": 0.0036,
+      "yield_convexity_term": 0.0021,
       "fx_convexity_term": 0.0013,
-      "cross_term": 0.0003,
+      "cross_term": 0.0002,
       "note": "IV(MOVE指数・VIX指数)反映後のボラティリティを用いて、価格が利回りに対して凸(コンベックス)であること・USD換算が為替に対して凸であることによる期待値のズレ(イェンセンの不等式)を単純DCF価格に加算した現在価値推定への補正額"
     },
     "history": [
@@ -847,17 +847,17 @@
         "value": 59.3679
       },
       {
-        "date": "2026-08-20",
-        "value": 59.785
+        "date": "2026-08-21",
+        "value": 59.3179
       }
     ],
-    "jgb_yield_daily_vol_bp": 3.321,
-    "jgb_yield_daily_vol_bp_realized": 4.108,
-    "jgb_yield_daily_vol_bp_iv_adjusted": 4.114,
-    "usd_jpy_daily_vol_pct": 0.4624,
-    "usd_jpy_daily_vol_pct_realized": 0.3342,
-    "usd_jpy_daily_vol_pct_iv_adjusted": 0.3054,
-    "yield_fx_correlation": 0.183,
+    "jgb_yield_daily_vol_bp": 4.083,
+    "jgb_yield_daily_vol_bp_realized": 4.167,
+    "jgb_yield_daily_vol_bp_iv_adjusted": 4.174,
+    "usd_jpy_daily_vol_pct": 0.465,
+    "usd_jpy_daily_vol_pct_realized": 0.336,
+    "usd_jpy_daily_vol_pct_iv_adjusted": 0.307,
+    "yield_fx_correlation": 0.124,
     "iv_regime": {
       "move": {
         "current": 73.4,
@@ -876,34 +876,34 @@
     },
     "garch11": {
       "jgb_yield": {
-        "omega": 1.059133939542484,
-        "alpha": 0.2566,
-        "beta": 0.6645,
+        "omega": 1.0638805994397746,
+        "alpha": 0.2537,
+        "beta": 0.6674,
         "persistence": 0.9211,
-        "forecast_vol": 2.6811434945660344,
-        "long_run_vol": 3.6631805226762606,
-        "log_likelihood": -1317.324,
+        "forecast_vol": 3.9947528324000845,
+        "long_run_vol": 3.671379879438585,
+        "log_likelihood": -1319.299,
         "n_obs": 510
       },
       "usd_jpy": {
-        "omega": 0.0360185022780125,
+        "omega": 0.0360302375341442,
         "alpha": 0.078,
         "beta": 0.8376,
         "persistence": 0.9156,
-        "forecast_vol": 0.7002738659681139,
-        "long_run_vol": 0.6531577804812504,
-        "log_likelihood": -487.343,
+        "forecast_vol": 0.7042443808479072,
+        "long_run_vol": 0.6532641750997161,
+        "log_likelihood": -487.419,
         "n_obs": 510
       },
       "note": "GARCH(1,1)(分散ターゲティング法によるMLE, 格子探索で推定)による翌営業日の予測ボラティリティ。過去60営業日の等ウェイト実測値と異なり、ボラティリティ・クラスタリング(荒れ相場の後は荒れが続きやすい性質)を反映できる。最終的な採用ボラティリティ(jgb_yield_daily_vol_bp等)はIV反映値との幾何平均"
     },
     "statistical_range_90": {
-      "low": 59.022,
-      "high": 60.6097,
+      "low": 58.4511,
+      "high": 60.2049,
       "note": "IV反映後の現在価値推定(usd_value_iv_adjusted)を中心に、過去60営業日の実測ボラティリティ・MOVE/VIXのIVレジーム比・GARCH(1,1)予測ボラティリティを組み合わせた統計的な変動レンジ(個別の材料の方向感は含まない)"
     },
     "expected_shortfall_95": {
-      "low": 58.432,
+      "low": 57.8007,
       "note": "下側Expected Shortfall(CVaR, 95%): 起こりうる最悪5%のシナリオに限定した場合の期待値(自由度5のt分布の解析解)。VaR(90%区間の下限)より厳しい、テールリスクを織り込んだ保守的な指標(Basel III/FRTBで採用されている手法)"
     },
     "bond_info": {
