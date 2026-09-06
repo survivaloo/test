@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-05T02:31:24.332765+00:00",
+  "generated_at": "2026-09-06T02:27:56.446528+00:00",
   "jgb_30y": {
     "value": 4.052,
     "date": "2026/9/3",
@@ -481,9 +481,9 @@
     "modified_duration": 17.46,
     "convexity": 0.0421,
     "usd_value_per_10k_face": 60.1428,
-    "usd_value_iv_adjusted": 60.1476,
+    "usd_value_iv_adjusted": 60.1475,
     "iv_present_value_adjustment": {
-      "total": 0.0048,
+      "total": 0.0047,
       "yield_convexity_term": 0.0016,
       "fx_convexity_term": 0.0026,
       "cross_term": 0.0005,
@@ -854,7 +854,7 @@
     "jgb_yield_daily_vol_bp": 3.54,
     "jgb_yield_daily_vol_bp_realized": 3.812,
     "jgb_yield_daily_vol_bp_iv_adjusted": 3.816,
-    "usd_jpy_daily_vol_pct": 0.6625,
+    "usd_jpy_daily_vol_pct": 0.6599,
     "usd_jpy_daily_vol_pct_realized": 0.5263,
     "usd_jpy_daily_vol_pct_iv_adjusted": 0.4714,
     "yield_fx_correlation": 0.218,
@@ -876,34 +876,34 @@
     },
     "garch11": {
       "jgb_yield": {
-        "omega": 1.1007746524238091,
+        "omega": 1.1005463156566981,
         "alpha": 0.2537,
         "beta": 0.6645,
         "persistence": 0.9182,
-        "forecast_vol": 3.283562552568677,
-        "long_run_vol": 3.66868551283447,
-        "log_likelihood": -1349.4,
-        "n_obs": 521
+        "forecast_vol": 3.2834589155556935,
+        "long_run_vol": 3.668304990248124,
+        "log_likelihood": -1346.77,
+        "n_obs": 520
       },
       "usd_jpy": {
-        "omega": 0.08717312393183761,
-        "alpha": 0.1063,
-        "beta": 0.6937,
-        "persistence": 0.8,
-        "forecast_vol": 0.9312959709152565,
-        "long_run_vol": 0.6602011963478921,
-        "log_likelihood": -506.53,
-        "n_obs": 521
+        "omega": 0.0860903435114417,
+        "alpha": 0.1034,
+        "beta": 0.6994,
+        "persistence": 0.8029,
+        "forecast_vol": 0.9239957885271153,
+        "long_run_vol": 0.6608253538163039,
+        "log_likelihood": -506.134,
+        "n_obs": 520
       },
       "note": "GARCH(1,1)(分散ターゲティング法によるMLE, 格子探索で推定)による翌営業日の予測ボラティリティ。過去60営業日の等ウェイト実測値と異なり、ボラティリティ・クラスタリング(荒れ相場の後は荒れが続きやすい性質)を反映できる。最終的な採用ボラティリティ(jgb_yield_daily_vol_bp等)はIV反映値との幾何平均"
     },
     "statistical_range_90": {
-      "low": 59.1663,
-      "high": 61.1451,
+      "low": 59.1683,
+      "high": 61.1429,
       "note": "IV反映後の現在価値推定(usd_value_iv_adjusted)を中心に、過去60営業日の実測ボラティリティ・MOVE/VIXのIVレジーム比・GARCH(1,1)予測ボラティリティを組み合わせた統計的な変動レンジ(個別の材料の方向感は含まない)"
     },
     "expected_shortfall_95": {
-      "low": 58.4342,
+      "low": 58.4376,
       "note": "下側Expected Shortfall(CVaR, 95%): 起こりうる最悪5%のシナリオに限定した場合の期待値(自由度5のt分布の解析解)。VaR(90%区間の下限)より厳しい、テールリスクを織り込んだ保守的な指標(Basel III/FRTBで採用されている手法)"
     },
     "bond_info": {
